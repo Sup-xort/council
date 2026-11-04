@@ -1,0 +1,16 @@
+[Unit]
+Description=SWITCH 학생회 홈페이지 (데모)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/projects/Council
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/home/ubuntu/projects/Council/council.env
+ExecStart=/usr/bin/python3 /home/ubuntu/projects/Council/council.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

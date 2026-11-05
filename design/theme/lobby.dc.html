@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>SWITCH 로비</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 402px; height: 874px; position: relative; overflow: hidden; background: {{t.bg}}; color: {{t.ink}}; font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', Pretendard, 'Noto Sans KR', sans-serif; font-size: 15px; line-height: 1.47; -webkit-font-smoothing: antialiased">
+
+  <header style="display: flex; align-items: center; height: 52px; padding: 0 20px; border-bottom: 1px solid {{t.line}}">
+    <a href="#" style="font-size: 17px; font-weight: 600; letter-spacing: .2px; text-decoration: none; color: {{t.ink}}">SWITCH</a>
+    <div style="margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 13px">
+      <span>임지원</span>
+      <a href="#" style="min-height: 44px; display: flex; align-items: center; color: {{t.sub}}; text-decoration: none">로그아웃</a>
+    </div>
+  </header>
+
+  <main style="display: flex; flex-direction: column; gap: 20px; padding: 16px 16px 0">
+
+    <section aria-label="공지·행사 배너" aria-roledescription="carousel" style="display: flex; flex-direction: column; gap: 2px">
+      <article style="height: 196px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px; padding: 26px 24px 20px; border-radius: 22px; background: {{t.card}}">
+        <span style="font-size: 13px; color: {{t.sub}}">공지</span>
+        <h2 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.7px; line-height: 1.2">제3대 학생회 SWITCH 출범</h2>
+        <p style="margin: 0; font-size: 15px; color: {{t.sub}}">반도체융합공학과 제3대 학생회가 시작합니다.</p>
+        <a href="Notice.dc.html" style="margin-top: auto; align-self: flex-start; min-height: 44px; display: flex; align-items: center; gap: 2px; font-size: 15px; text-decoration: none; color: {{t.ink}}">자세히 보기
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 6l6 6-6 6"></path></svg></a>
+      </article>
+      <div style="display: flex; justify-content: center">
+        <button aria-label="1번째 배너" aria-current="true" style="width: 24px; height: 44px; border: 0; background: none; padding: 0; display: flex; align-items: center; justify-content: center"><span style="width: 7px; height: 7px; border-radius: 50%; background: {{t.ink}}"></span></button>
+        <button aria-label="2번째 배너" style="width: 24px; height: 44px; border: 0; background: none; padding: 0; display: flex; align-items: center; justify-content: center"><span style="width: 7px; height: 7px; border-radius: 50%; background: {{t.dot}}"></span></button>
+        <button aria-label="3번째 배너" style="width: 24px; height: 44px; border: 0; background: none; padding: 0; display: flex; align-items: center; justify-content: center"><span style="width: 7px; height: 7px; border-radius: 50%; background: {{t.dot}}"></span></button>
+      </div>
+    </section>
+
+    <div style="display: flex; flex-direction: column; gap: 4px; padding: 0 4px">
+      <span style="font-size: 13px; color: {{t.sub}}">11월 5일 목요일</span>
+      <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -.9px; line-height: 1.15">세미나실</h1>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 10px">
+      <div style="flex: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; padding: 3px; border-radius: 12px; background: {{t.tint}}">
+        <button aria-pressed="true" style="height: 36px; border: 0; border-radius: 9px; background: {{t.segOn}}; color: {{t.ink}}; font-size: 14px; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.1); font-family: inherit">세미나실 1</button>
+        <button style="height: 36px; border: 0; border-radius: 9px; background: transparent; color: {{t.sub}}; font-size: 14px; font-family: inherit">세미나실 2</button>
+      </div>
+      <div style="display: flex; gap: 4px">
+        <button aria-label="이전 주" style="width: 44px; height: 44px; border: 0; border-radius: 50%; background: {{t.tint}}; color: {{t.ink}}; display: flex; align-items: center; justify-content: center; padding: 0">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 6 8.5 12l6 6"></path></svg>
+        </button>
+        <button style="height: 44px; padding: 0 14px; border: 0; border-radius: 99px; background: {{t.tint}}; color: {{t.ink}}; font-size: 14px; font-family: inherit">오늘</button>
+        <button aria-label="다음 주" style="width: 44px; height: 44px; border: 0; border-radius: 50%; background: {{t.tint}}; color: {{t.ink}}; display: flex; align-items: center; justify-content: center; padding: 0">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 6l6 6-6 6"></path></svg>
+        </button>
+      </div>
+    </div>
+
+    <section aria-label="세미나실 1 이번 주 예약 현황" style="padding: 16px 12px 14px; border-radius: 22px; background: {{t.card}}">
+      <div style="display: grid; grid-template-columns: 30px repeat(7, minmax(0, 1fr)); gap: 3px; padding-bottom: 10px">
+        <span></span>
+        <sc-for list="{{days}}" as="d" hint-placeholder-count="7">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 4px">
+            <span style="font-size: 11px; color: {{t.sub}}">{{d.w}}</span>
+            <sc-if value="{{d.today}}" hint-placeholder-val="{{false}}">
+              <span style="width: 28px; height: 28px; border-radius: 50%; background: {{t.mine}}; color: {{t.mineInk}}; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums">{{d.n}}</span>
+            </sc-if>
+            <sc-if value="{{d.other}}" hint-placeholder-val="{{true}}">
+              <span style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-variant-numeric: tabular-nums">{{d.n}}</span>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 3px">
+        <sc-for list="{{rows}}" as="row" hint-placeholder-count="13">
+          <div style="display: grid; grid-template-columns: 30px repeat(7, minmax(0, 1fr)); gap: 3px; height: 32px">
+            <span style="display: flex; align-items: center; font-size: 11px; color: {{t.sub}}; font-variant-numeric: tabular-nums">{{row.label}}</span>
+            <sc-for list="{{row.cells}}" as="c" hint-placeholder-count="7">
+              <sc-if value="{{c.free}}" hint-placeholder-val="{{true}}">
+                <button aria-label="{{c.label}} 예약" style="border: 0; border-radius: 7px; background: {{t.fill}}; padding: 0"></button>
+              </sc-if>
+              <sc-if value="{{c.past}}" hint-placeholder-val="{{false}}">
+                <span></span>
+              </sc-if>
+              <sc-if value="{{c.busy}}" hint-placeholder-val="{{false}}">
+                <span style="border-radius: 7px; background: {{t.busy}}; color: {{t.busyInk}}; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 500; letter-spacing: -.4px; white-space: nowrap; overflow: hidden">{{c.who}}</span>
+              </sc-if>
+              <sc-if value="{{c.mine}}" hint-placeholder-val="{{false}}">
+                <span style="border-radius: 7px; background: {{t.mine}}; color: {{t.mineInk}}; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 500; white-space: nowrap">내 예약</span>
+              </sc-if>
+            </sc-for>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+  </main>
+
+  <sc-if value="{{glass}}" hint-placeholder-val="{{true}}">
+    <nav style="position: absolute; left: 16px; right: 16px; bottom: 20px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 6px; border-radius: 32px; background: {{t.glassBg}}; border: 1px solid {{t.glassBorder}}; box-shadow: {{t.glassShadow}}; backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%)">
+      <a href="#" aria-current="page" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; background: {{t.tint}}; font-size: 10px; font-weight: 600; text-decoration: none; color: {{t.ink}}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10.5 12 3.5l8.5 7V20a.5.5 0 0 1-.5.5h-5v-6h-6v6H4a.5.5 0 0 1-.5-.5z"></path></svg>로비</a>
+      <a href="#" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; font-size: 10px; text-decoration: none; color: {{t.navSub}}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 7.5 12 3 3.5 7.5v9L12 21l8.5-4.5z"></path><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"></path></svg>대여</a>
+      <a href="#" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; font-size: 10px; text-decoration: none; color: {{t.navSub}}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"></rect><path d="M3.5 10h17M8 3v4M16 3v4"></path></svg>예약</a>
+      <a href="Event.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; font-size: 10px; text-decoration: none; color: {{t.navSub}}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 21V4M5.5 4.5h11l-2.2 4 2.2 4h-11"></path></svg>행사</a>
+    </nav>
+  </sc-if>
+  <sc-if value="{{flat}}" hint-placeholder-val="{{false}}">
+    <nav style="position: absolute; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 6px 8px 22px; background: {{t.barBg}}; border-top: 1px solid {{t.line}}">
+      <a href="#" aria-current="page" style="min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; font-weight: 600; text-decoration: none; color: {{t.ink}}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10.5 12 3.5l8.5 7V20a.5.5 0 0 1-.5.5h-5v-6h-6v6H4a.5.5 0 0 1-.5-.5z"></path></svg>로비</a>
+      <a href="#" style="min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; text-decoration: none; color: {{t.sub}}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 7.5 12 3 3.5 7.5v9L12 21l8.5-4.5z"></path><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"></path></svg>대여</a>
+      <a href="#" style="min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; text-decoration: none; color: {{t.sub}}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"></rect><path d="M3.5 10h17M8 3v4M16 3v4"></path></svg>예약</a>
+      <a href="Event.dc.html" style="min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; text-decoration: none; color: {{t.sub}}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 21V4M5.5 4.5h11l-2.2 4 2.2 4h-11"></path></svg>행사</a>
+    </nav>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"glass":{"editor":"boolean","default":true},"$preview":{"width":402,"height":874}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const LIGHT = { bg: '#F0F7FB', card: '#FFFFFF', fill: '#F0F7FB', ink: '#1D1D1F', sub: '#6E6E73', navSub: '#5E5E63', line: 'rgba(0,0,0,.06)', dot: 'rgba(0,0,0,.2)',
+      tint: 'rgba(0,0,0,.06)', segOn: '#FFFFFF', busy: '#C4E4F4', busyInk: '#1D1D1F', mine: '#1D1D1F', mineInk: '#FFFFFF',
+      glassBg: 'rgba(255,255,255,.58)', glassBorder: 'rgba(255,255,255,.75)', glassShadow: '0 10px 30px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.9)', barBg: 'rgba(255,255,255,.9)' };
+    const DARK = { bg: '#0D1215', card: '#182025', fill: '#222B31', ink: '#F2F5F7', sub: '#9AA3A9', navSub: '#AEB6BB', line: 'rgba(255,255,255,.08)', dot: 'rgba(255,255,255,.25)',
+      tint: 'rgba(255,255,255,.1)', segOn: '#2C363C', busy: '#35596B', busyInk: '#F2F5F7', mine: '#F2F5F7', mineInk: '#0D1215',
+      glassBg: 'rgba(36,44,50,.55)', glassBorder: 'rgba(255,255,255,.12)', glassShadow: '0 10px 30px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.1)', barBg: 'rgba(24,32,37,.94)' };
+    const glass = this.props.glass ?? true;
+    const DAYS = ['월','화','수','목','금','토','일'];
+    const BOOK = {'0|10':'김*수','0|11':'김*수','1|15':'박*연','1|16':'박*연','2|13':'이*민','3|15':'me','3|16':'me','3|19':'정*호','4|10':'최*아','4|11':'최*아','4|17':'윤*진','5|13':'한*율','5|14':'한*율'};
+    const today = 3, nowH = 14;
+    const rows = [];
+    for (let h = 9; h <= 21; h++) {
+      rows.push({
+        label: h + '시',
+        cells: DAYS.map((w, i) => {
+          const b = BOOK[i + '|' + h];
+          const past = i < today || (i === today && h < nowH);
+          return { mine: b === 'me', busy: !!b && b !== 'me', past: !b && past, free: !b && !past,
+                   who: b && b !== 'me' ? b : '', label: '11월 ' + (2 + i) + '일(' + w + ') ' + h + '시' };
+        })
+      });
+    }
+    return {
+      t: this.props.dark ? DARK : LIGHT,
+      glass: glass, flat: !glass,
+      days: DAYS.map((w, i) => ({ w: w, n: 2 + i, today: i === today, other: i !== today })),
+      rows: rows
+    };
+  }
+}
+</script>
+</body>
+</html>

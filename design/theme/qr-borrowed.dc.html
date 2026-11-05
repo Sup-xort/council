@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>SWITCH QR 대여 완료</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 402px; height: 874px; position: relative; overflow: hidden; background: {{t.bg}}; color: {{t.ink}}; font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', Pretendard, 'Noto Sans KR', sans-serif; font-size: 15px; line-height: 1.47; -webkit-font-smoothing: antialiased">
+
+  <header style="display: flex; align-items: center; height: 52px; padding: 0 20px; border-bottom: 1px solid {{t.line}}">
+    <a href="Main.dc.html" style="font-size: 17px; font-weight: 600; letter-spacing: .2px; text-decoration: none; color: {{t.ink}}">SWITCH</a>
+    <span style="margin-left: auto; font-size: 13px">임지원</span>
+  </header>
+
+  <main style="display: flex; flex-direction: column; align-items: center; padding: 120px 24px 0; text-align: center">
+    <div style="width: 76px; height: 76px; border-radius: 50%; background: {{t.ok}}; display: flex; align-items: center; justify-content: center">
+      <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: {{t.okInk}}"><path d="m5 12.5 4.5 4.5L19 7.5"></path></svg>
+    </div>
+    <h1 style="margin: 24px 0 0; font-size: 30px; font-weight: 700; letter-spacing: -.8px; line-height: 1.2">대여 완료</h1>
+    <p style="margin: 6px 0 0; font-size: 19px; font-weight: 500">우산 1</p>
+    <p style="margin: 14px 0 0; max-width: 280px; font-size: 15px; color: {{t.sub}}; text-wrap: pretty">다 쓰면 같은 QR을 다시 찍으면 반납됩니다.</p>
+    <a href="#" style="margin-top: 44px; width: 100%; height: 50px; display: flex; align-items: center; justify-content: center; border-radius: 99px; background: {{t.btn}}; color: {{t.btnInk}}; font-size: 16px; text-decoration: none">내 대여 보기</a>
+  </main>
+
+  <sc-if value="{{glass}}" hint-placeholder-val="{{true}}">
+    <nav style="position: absolute; left: 16px; right: 16px; bottom: 20px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 6px; border-radius: 32px; background: {{t.glassBg}}; border: 1px solid {{t.glassBorder}}; box-shadow: {{t.glassShadow}}; backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%)">
+      <a href="Main.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; font-size: 10px; text-decoration: none; color: {{t.navSub}}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10.5 12 3.5l8.5 7V20a.5.5 0 0 1-.5.5h-5v-6h-6v6H4a.5.5 0 0 1-.5-.5z"></path></svg>로비</a>
+      <a href="#" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; font-size: 10px; text-decoration: none; color: {{t.navSub}}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 7.5 12 3 3.5 7.5v9L12 21l8.5-4.5z"></path><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"></path></svg>대여</a>
+      <a href="#" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; font-size: 10px; text-decoration: none; color: {{t.navSub}}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"></rect><path d="M3.5 10h17M8 3v4M16 3v4"></path></svg>예약</a>
+      <a href="Event.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; font-size: 10px; text-decoration: none; color: {{t.navSub}}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 21V4M5.5 4.5h11l-2.2 4 2.2 4h-11"></path></svg>행사</a>
+    </nav>
+  </sc-if>
+  <sc-if value="{{flat}}" hint-placeholder-val="{{false}}">
+    <nav style="position: absolute; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 6px 8px 22px; background: {{t.barBg}}; border-top: 1px solid {{t.line}}">
+      <a href="Main.dc.html" style="min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; text-decoration: none; color: {{t.sub}}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10.5 12 3.5l8.5 7V20a.5.5 0 0 1-.5.5h-5v-6h-6v6H4a.5.5 0 0 1-.5-.5z"></path></svg>로비</a>
+      <a href="#" style="min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; text-decoration: none; color: {{t.sub}}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 7.5 12 3 3.5 7.5v9L12 21l8.5-4.5z"></path><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"></path></svg>대여</a>
+      <a href="#" style="min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; text-decoration: none; color: {{t.sub}}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"></rect><path d="M3.5 10h17M8 3v4M16 3v4"></path></svg>예약</a>
+      <a href="Event.dc.html" style="min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; text-decoration: none; color: {{t.sub}}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 21V4M5.5 4.5h11l-2.2 4 2.2 4h-11"></path></svg>행사</a>
+    </nav>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"glass":{"editor":"boolean","default":true},"$preview":{"width":402,"height":874}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const LIGHT = { bg: '#F0F7FB', ink: '#1D1D1F', sub: '#6E6E73', navSub: '#5E5E63', line: 'rgba(0,0,0,.06)', btn: '#1D1D1F', btnInk: '#FFFFFF', ok: '#C4E4F4', okInk: '#1D1D1F',
+      glassBg: 'rgba(255,255,255,.58)', glassBorder: 'rgba(255,255,255,.75)', glassShadow: '0 10px 30px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.9)', barBg: 'rgba(255,255,255,.9)' };
+    const DARK = { bg: '#0D1215', ink: '#F2F5F7', sub: '#9AA3A9', navSub: '#AEB6BB', line: 'rgba(255,255,255,.08)', btn: '#F2F5F7', btnInk: '#0D1215', ok: '#35596B', okInk: '#F2F5F7',
+      glassBg: 'rgba(36,44,50,.55)', glassBorder: 'rgba(255,255,255,.12)', glassShadow: '0 10px 30px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.1)', barBg: 'rgba(24,32,37,.94)' };
+    const glass = this.props.glass ?? true;
+    return { t: this.props.dark ? DARK : LIGHT, glass: glass, flat: !glass };
+  }
+}
+</script>
+</body>
+</html>

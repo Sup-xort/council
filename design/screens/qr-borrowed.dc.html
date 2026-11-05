@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>SWITCH QR 대여 완료 — 덜어낸 판</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+a{color:#1D1D1F}a:hover{color:#000000}
+</style>
+</helmet>
+<div style="width: 402px; height: 874px; position: relative; overflow: hidden; background: {{ground}}; color: #1D1D1F; font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', Pretendard, 'Noto Sans KR', sans-serif; font-size: 15px; line-height: 1.47; -webkit-font-smoothing: antialiased">
+
+  <header style="display: flex; align-items: center; height: 52px; padding: 0 20px; border-bottom: 1px solid rgba(0,0,0,.06)">
+    <a href="#" style="font-size: 17px; font-weight: 600; letter-spacing: .2px; text-decoration: none; color: #1D1D1F">SWITCH</a>
+    <span style="margin-left: auto; font-size: 13px">임지원</span>
+  </header>
+
+  <main style="display: flex; flex-direction: column; align-items: center; padding: 104px 24px 0; text-align: center">
+    <div style="width: 76px; height: 76px; border-radius: 50%; background: {{accent}}; display: flex; align-items: center; justify-content: center">
+      <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="#1D1D1F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"></path></svg>
+    </div>
+    <h1 style="margin: 24px 0 0; font-size: 30px; font-weight: 700; letter-spacing: -.8px; line-height: 1.2">대여 완료</h1>
+    <p style="margin: 6px 0 0; font-size: 19px; font-weight: 500">우산 1</p>
+    <p style="margin: 14px 0 0; max-width: 280px; font-size: 15px; color: #6E6E73; text-wrap: pretty">다 쓰면 같은 QR을 다시 찍으면 반납됩니다.</p>
+    <a href="#" style="margin-top: 44px; width: 100%; height: 50px; display: flex; align-items: center; justify-content: center; border-radius: 99px; background: #1D1D1F; color: #FFFFFF; font-size: 16px; text-decoration: none">내 대여 보기</a>
+  </main>
+
+  <nav style="position: absolute; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 6px 8px 22px; background: rgba(255,255,255,.88); border-top: 1px solid rgba(0,0,0,.08)">
+    <a href="#" style="min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; text-decoration: none; color: #6E6E73">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10.5 12 3.5l8.5 7V20a.5.5 0 0 1-.5.5h-5v-6h-6v6H4a.5.5 0 0 1-.5-.5z"></path></svg>로비</a>
+    <a href="#" style="min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; text-decoration: none; color: #6E6E73">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 7.5 12 3 3.5 7.5v9L12 21l8.5-4.5z"></path><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"></path></svg>대여</a>
+    <a href="#" style="min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; text-decoration: none; color: #6E6E73">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"></rect><path d="M3.5 10h17M8 3v4M16 3v4"></path></svg>예약</a>
+    <a href="#" style="min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; text-decoration: none; color: #6E6E73">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 21V4M5.5 4.5h11l-2.2 4 2.2 4h-11"></path></svg>행사</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"ground":{"editor":"color","default":"#F0F7FB","options":["#F0F7FB","#E8F3F9","#F5F5F7"]},"accent":{"editor":"color","default":"#C4E4F4","options":["#C4E4F4","#AFD6EC","#E5E5EA"]},"$preview":{"width":402,"height":874}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { ground: this.props.ground ?? '#F0F7FB', accent: this.props.accent ?? '#C4E4F4' };
+  }
+}
+</script>
+</body>
+</html>

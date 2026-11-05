@@ -66,6 +66,10 @@ CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, title TEXT NOT NULL, b
 CREATE TABLE IF NOT EXISTS applications(id INTEGER PRIMARY KEY, event_id INTEGER NOT NULL REFERENCES events ON DELETE CASCADE,
   user_id INTEGER NOT NULL REFERENCES users ON DELETE CASCADE, answers TEXT NOT NULL, updated_at TEXT NOT NULL,
   UNIQUE(event_id, user_id));
+CREATE TABLE IF NOT EXISTS notices(id INTEGER PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('dept','event')),
+  title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', chips TEXT NOT NULL DEFAULT '[]',
+  event_id INTEGER REFERENCES events ON DELETE SET NULL, on_lobby INTEGER NOT NULL DEFAULT 0,
+  author_id INTEGER REFERENCES users ON DELETE SET NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS resets(token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
   expires TEXT NOT NULL);
 """
@@ -96,6 +100,16 @@ def init_db():
     with connect() as c:
         c.execute("PRAGMA journal_mode=WAL")
         c.executescript(SCHEMA)
+        icols = {r[1] for r in c.execute("PRAGMA table_info(items)")}
+        if "kind" not in icols:             # 물품 = 종류 + 번호 (우산 1번, 우산 2번). 옛 물품은 번호 없이 종류=이름
+            c.execute("ALTER TABLE items ADD COLUMN kind TEXT")
+            c.execute("ALTER TABLE items ADD COLUMN num INTEGER")
+            c.execute("UPDATE items SET kind=name")
+        cols = {r[1] for r in c.execute("PRAGMA table_info(events)")}
+        if "capacity" not in cols:          # NULL = 정원 없음
+            c.execute("ALTER TABLE events ADD COLUMN capacity INTEGER")
+        if "show_count" not in cols:        # 0 이면 신청 인원을 화면에 내지 않는다
+            c.execute("ALTER TABLE events ADD COLUMN show_count INTEGER NOT NULL DEFAULT 1")
         if not c.execute("SELECT 1 FROM rooms").fetchone():
             c.executemany("INSERT INTO rooms(name) VALUES(?)", [(r,) for r in ROOMS])
 
@@ -263,14 +277,14 @@ def scan(c, me, b, q):
 
 
 def items(c, me, b, q):
-    rows = c.execute("SELECT id, name, borrower_id, borrowed_at FROM items ORDER BY name").fetchall()
-    return {"items": [{"id": r["id"], "name": r["name"], "available": r["borrower_id"] is None,
+    rows = c.execute("SELECT id, kind, num, name, borrower_id, borrowed_at FROM items ORDER BY kind, num, id").fetchall()
+    return {"items": [{"id": r["id"], "kind": r["kind"], "num": r["num"], "name": r["name"], "available": r["borrower_id"] is None,
                        "mine": r["borrower_id"] == me["id"], "borrowed_at": r["borrowed_at"]} for r in rows]}
 
 
 def admin_items(c, me, b, q):
-    rows = c.execute("""SELECT i.id, i.code, i.name, i.borrowed_at, u.name AS who, u.student_id
-                        FROM items i LEFT JOIN users u ON u.id=i.borrower_id ORDER BY i.name""").fetchall()
+    rows = c.execute("""SELECT i.id, i.code, i.kind, i.num, i.name, i.borrowed_at, u.name AS who, u.student_id
+                        FROM items i LEFT JOIN users u ON u.id=i.borrower_id ORDER BY i.kind, i.num, i.id""").fetchall()
     loans = c.execute("""SELECT l.out_at, l.in_at, i.name AS item, u.name AS who, u.student_id
                          FROM loans l JOIN items i ON i.id=l.item_id JOIN users u ON u.id=l.user_id
                          ORDER BY l.id DESC LIMIT 50""").fetchall()
@@ -278,15 +292,26 @@ def admin_items(c, me, b, q):
 
 
 def admin_item_add(c, me, b, q):
-    name = s(b, "name", 60)
-    for _ in range(20):
-        code = "".join(secrets.choice(CODE_CHARS) for _ in range(4))
-        try:
-            c.execute("INSERT INTO items(code,name) VALUES(?,?)", (code, name))
-            return {"ok": True}
-        except sqlite3.IntegrityError:
-            continue
-    raise Err(500, "코드 생성 실패")
+    """종류와 개수만 받는다 — 우산 3개면 '우산 1번~3번'. 같은 종류를 또 추가하면 다음 번호부터 이어진다."""
+    kind = s(b, "kind", 40)
+    try:
+        count = int(b.get("count", 1))
+    except (TypeError, ValueError):
+        raise Err(400, "개수는 숫자여야 합니다")
+    if not 1 <= count <= 100:
+        raise Err(400, "한 번에 1~100개까지 추가할 수 있습니다")
+    last = c.execute("SELECT COALESCE(MAX(num), 0) FROM items WHERE kind=?", (kind,)).fetchone()[0]
+    for num in range(last + 1, last + count + 1):
+        for _ in range(20):
+            code = "".join(secrets.choice(CODE_CHARS) for _ in range(4))
+            try:
+                c.execute("INSERT INTO items(code,kind,num,name) VALUES(?,?,?,?)", (code, kind, num, f"{kind} {num}번"))
+                break
+            except sqlite3.IntegrityError:
+                continue
+        else:
+            raise Err(500, "코드 생성 실패")
+    return {"ok": True, "added": count}
 
 
 def admin_item_del(c, me, b, q):
@@ -310,7 +335,7 @@ def admin_qr_pdf(c, me, b, q):
         raise Err(400, "지원하지 않는 크기")
     if not ids:
         raise Err(400, "물품을 고르세요")
-    rows = c.execute(f"SELECT code, name FROM items WHERE id IN ({','.join('?' * len(ids))}) ORDER BY name", ids).fetchall()
+    rows = c.execute(f"SELECT code, name FROM items WHERE id IN ({','.join('?' * len(ids))}) ORDER BY kind, num, id", ids).fetchall()
     if not rows:
         raise Err(400, "물품을 고르세요")
     return qr_pdf([(r["name"], r["code"]) for r in rows], size)
@@ -472,19 +497,33 @@ def event_out(e):
     return d
 
 
+def count_of(c, e):
+    return c.execute("SELECT COUNT(*) FROM applications WHERE event_id=?", (e["id"],)).fetchone()[0]
+
+
+def gauge(c, e):
+    """공개해도 되는 신청 현황. show_count=0 이면 n 을 뺀다. 정원이 없으면 capacity=None."""
+    n, cap = count_of(c, e), e["capacity"]
+    return {"id": e["id"], "title": e["title"], "deadline": e["deadline"], "capacity": cap,
+            "n": n if e["show_count"] else None, "show_count": bool(e["show_count"]),
+            "full": cap is not None and n >= cap, "closed": parse_dt(e["deadline"], "마감") <= now()}
+
+
 def events(c, me, b, q):
     rows = c.execute("SELECT * FROM events WHERE on_lobby=1 ORDER BY deadline DESC").fetchall()
-    mine = {r[0] for r in c.execute("SELECT event_id FROM applications WHERE user_id=?", (me["id"],))} if me else set()
-    return {"events": [dict(event_out(e), applied=e["id"] in mine) for e in rows]}
+    mine = {r[0] for r in c.execute("SELECT event_id FROM applications WHERE user_id=?", (me["id"],))}
+    return {"events": [dict(event_out(e), applied=e["id"] in mine, gauge=gauge(c, e)) for e in rows]}
 
 
 def event(c, me, b, q):
     e = c.execute("SELECT * FROM events WHERE id=?", (q.get("id", ["0"])[0],)).fetchone()
     if not e:
         raise Err(404, "없는 행사입니다")
-    a = me and c.execute("SELECT answers, updated_at FROM applications WHERE event_id=? AND user_id=?",
-                         (e["id"], me["id"])).fetchone()
-    return {"event": event_out(e), "application": {"answers": json.loads(a["answers"]), "updated_at": a["updated_at"]} if a else None}
+    a = c.execute("SELECT answers, updated_at FROM applications WHERE event_id=? AND user_id=?",
+                  (e["id"], me["id"])).fetchone()
+    nt = c.execute("SELECT id FROM notices WHERE event_id=? ORDER BY id DESC LIMIT 1", (e["id"],)).fetchone()
+    return {"event": event_out(e), "gauge": gauge(c, e), "notice_id": nt["id"] if nt else None,
+            "application": {"answers": json.loads(a["answers"]), "updated_at": a["updated_at"]} if a else None}
 
 
 def check_answers(fields, ans):
@@ -516,6 +555,10 @@ def apply(c, me, b, q):
     if parse_dt(e["deadline"], "마감") <= now():
         raise Err(403, "마감된 행사입니다")
     ans = json.dumps(check_answers(json.loads(e["fields"]), b.get("answers", {})), ensure_ascii=False)
+    c.execute("BEGIN IMMEDIATE")          # 정원 확인과 저장 사이에 다른 신청이 끼어들지 못하게
+    mine = c.execute("SELECT 1 FROM applications WHERE event_id=? AND user_id=?", (e["id"], me["id"])).fetchone()
+    if not mine and e["capacity"] is not None and count_of(c, e) >= e["capacity"]:
+        raise Err(409, "정원이 찼습니다")
     c.execute("""INSERT INTO applications(event_id,user_id,answers,updated_at) VALUES(?,?,?,?)
                  ON CONFLICT(event_id,user_id) DO UPDATE SET answers=excluded.answers, updated_at=excluded.updated_at""",
               (e["id"], me["id"], ans, stamp()))
@@ -543,7 +586,7 @@ def check_fields(fields):
 def admin_events(c, me, b, q):
     rows = c.execute("""SELECT e.*, (SELECT COUNT(*) FROM applications a WHERE a.event_id=e.id) AS n
                         FROM events e ORDER BY e.id DESC""").fetchall()
-    return {"events": [dict(event_out(e), n=e["n"]) for e in rows]}
+    return {"events": [dict(event_out(e), n=e["n"]) for e in rows]}   # 관리자에겐 show_count 와 상관없이 실제 n
 
 
 def admin_event_save(c, me, b, q):
@@ -551,14 +594,25 @@ def admin_event_save(c, me, b, q):
     starts = b.get("starts_at") or ""
     if starts:
         starts = parse_dt(starts, "일시").isoformat(timespec="minutes")
+    cap = b.get("capacity")
+    if cap in (None, "", 0, "0"):
+        cap = None                                   # 정원 없음
+    else:
+        try:
+            cap = int(cap)
+        except (TypeError, ValueError):
+            raise Err(400, "정원은 숫자여야 합니다")
+        if not 1 <= cap <= 100000:
+            raise Err(400, "정원이 잘못됐습니다")
     vals = (s(b, "title", 100), s(b, "body", 5000, required=False), starts, deadline,
-            1 if b.get("on_lobby") else 0, json.dumps(check_fields(b.get("fields", [])), ensure_ascii=False))
+            1 if b.get("on_lobby") else 0, json.dumps(check_fields(b.get("fields", [])), ensure_ascii=False),
+            cap, 0 if b.get("show_count") is False else 1)
     if b.get("id"):
         # 신청이 이미 있으면 항목 순서가 바뀔 때 답이 어긋난다 — 관리자 화면이 경고한다
-        c.execute("UPDATE events SET title=?, body=?, starts_at=?, deadline=?, on_lobby=?, fields=? WHERE id=?",
+        c.execute("UPDATE events SET title=?, body=?, starts_at=?, deadline=?, on_lobby=?, fields=?, capacity=?, show_count=? WHERE id=?",
                   vals + (b["id"],))
     else:
-        c.execute("INSERT INTO events(title,body,starts_at,deadline,on_lobby,fields) VALUES(?,?,?,?,?,?)", vals)
+        c.execute("INSERT INTO events(title,body,starts_at,deadline,on_lobby,fields,capacity,show_count) VALUES(?,?,?,?,?,?,?,?)", vals)
     return {"ok": True}
 
 
@@ -576,6 +630,127 @@ def admin_applications(c, me, b, q):
     return {"event": event_out(e), "applications": [dict(r, answers=json.loads(r["answers"])) for r in rows]}
 
 
+# ── 공지 · 배너 ─────────────────────────────────────────────────────────
+# 행사 공지와 로비 배너에 오른 공지는 비로그인도 읽는다. 나머지 학과 공지는 로그인해야 목록·본문이 보인다.
+
+TABS = ("home", "notices", "events", "reserve", "loans")
+
+
+def readable(me, n):
+    return bool(me) or n["kind"] == "event" or bool(n["on_lobby"])
+
+
+def notice_out(c, n, full=False):
+    d = {"id": n["id"], "kind": n["kind"], "title": n["title"], "summary": n["summary"], "on_lobby": bool(n["on_lobby"]),
+         "chips": json.loads(n["chips"]), "created_at": n["created_at"], "event_id": n["event_id"]}
+    u = c.execute("SELECT name FROM users WHERE id=?", (n["author_id"],)).fetchone()
+    d["author"] = u["name"] if u else ""
+    e = c.execute("SELECT * FROM events WHERE id=?", (n["event_id"],)).fetchone() if n["event_id"] else None
+    d["event"] = gauge(c, e) if e else None
+    if full:
+        d["body"] = n["body"]
+    return d
+
+
+def banners(c, me, b, q):
+    out = []
+    for n in c.execute("SELECT * FROM notices WHERE on_lobby=1 ORDER BY id DESC"):
+        out.append(dict(notice_out(c, n), type="notice"))
+    for e in c.execute("SELECT * FROM events WHERE on_lobby=1 ORDER BY deadline"):
+        g = gauge(c, e)
+        if g["closed"]:
+            continue
+        out.append({"type": "event", "id": e["id"], "kind": "event", "title": e["title"],
+                    "summary": e["body"].split("\n", 1)[0][:100], "starts_at": e["starts_at"], "event": g,
+                    "chips": [{"label": "참여 신청", "type": "event", "target": str(e["id"])}]})
+    return {"banners": out}
+
+
+def notices(c, me, b, q):
+    kind = q.get("kind", [""])[0]
+    if kind not in ("", "dept", "event"):
+        raise Err(400, "잘못된 분류")
+    if kind == "dept" and not me:
+        raise Err(401, "로그인이 필요합니다")
+    sql, args = "SELECT * FROM notices", []
+    if kind:
+        sql, args = sql + " WHERE kind=?", [kind]
+    elif not me:
+        sql += " WHERE kind='event'"
+    return {"notices": [notice_out(c, n) for n in c.execute(sql + " ORDER BY id DESC LIMIT 200", args)]}
+
+
+def notice(c, me, b, q):
+    n = c.execute("SELECT * FROM notices WHERE id=?", (q.get("id", ["0"])[0],)).fetchone()
+    if not me and not (n and readable(me, n)):     # 비로그인에겐 없는 글과 막힌 글이 같은 답
+        raise Err(401, "로그인이 필요합니다")
+    if not n:
+        raise Err(404, "없는 공지입니다")
+    vis = "" if me else " AND kind='event'"
+    prev = c.execute(f"SELECT id,title FROM notices WHERE id<?{vis} ORDER BY id DESC LIMIT 1", (n["id"],)).fetchone()
+    nxt = c.execute(f"SELECT id,title FROM notices WHERE id>?{vis} ORDER BY id LIMIT 1", (n["id"],)).fetchone()
+    return {"notice": notice_out(c, n, full=True), "prev": dict(prev) if prev else None, "next": dict(nxt) if nxt else None}
+
+
+def check_chips(c, chips):
+    if not isinstance(chips, list) or len(chips) > 6:
+        raise Err(400, "칩은 6개까지입니다")
+    out = []
+    for ch in chips:
+        if not isinstance(ch, dict):
+            raise Err(400, "칩이 잘못됐습니다")
+        label, typ, target = s(ch, "label", 30), ch.get("type"), str(ch.get("target", "")).strip()
+        if typ == "tab":
+            ok = target in TABS
+        elif typ == "event":
+            ok = bool(c.execute("SELECT 1 FROM events WHERE id=?", (target,)).fetchone())
+        elif typ == "notice":
+            ok = bool(c.execute("SELECT 1 FROM notices WHERE id=?", (target,)).fetchone())
+        elif typ == "url":
+            ok = re.fullmatch(r"https?://[^\s]{1,500}", target) is not None
+        else:
+            ok = False
+        if not ok:
+            raise Err(400, f"칩 '{label}' 의 이동 대상이 잘못됐습니다")
+        out.append({"label": label, "type": typ, "target": target})
+    return out
+
+
+def admin_notices(c, me, b, q):
+    return {"notices": [notice_out(c, n) for n in c.execute("SELECT * FROM notices ORDER BY id DESC")]}
+
+
+def admin_notice(c, me, b, q):
+    n = c.execute("SELECT * FROM notices WHERE id=?", (q.get("id", ["0"])[0],)).fetchone()
+    if not n:
+        raise Err(404, "없는 공지입니다")
+    return {"notice": notice_out(c, n, full=True)}
+
+
+def admin_notice_save(c, me, b, q):
+    kind = b.get("kind")
+    if kind not in ("dept", "event"):
+        raise Err(400, "분류가 잘못됐습니다")
+    eid = b.get("event_id") or None
+    if eid and not c.execute("SELECT 1 FROM events WHERE id=?", (eid,)).fetchone():
+        raise Err(400, "연결할 행사가 없습니다")
+    vals = (kind, s(b, "title", 100), s(b, "summary", 100, required=False), s(b, "body", 20000, required=False),
+            json.dumps(check_chips(c, b.get("chips", [])), ensure_ascii=False), eid, 1 if b.get("on_lobby") else 0)
+    if b.get("id"):
+        if not c.execute("UPDATE notices SET kind=?, title=?, summary=?, body=?, chips=?, event_id=?, on_lobby=? WHERE id=?",
+                         vals + (b["id"],)).rowcount:
+            raise Err(404, "없는 공지입니다")
+    else:
+        c.execute("INSERT INTO notices(kind,title,summary,body,chips,event_id,on_lobby,author_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                  vals + (me["id"], stamp()))
+    return {"ok": True}
+
+
+def admin_notice_del(c, me, b, q):
+    c.execute("DELETE FROM notices WHERE id=?", (b.get("id"),))
+    return {"ok": True}
+
+
 # ── 사용자 (최고 관리자) ────────────────────────────────────────────────
 
 def admin_users(c, me, b, q):
@@ -591,8 +766,10 @@ def admin_role(c, me, b, q):
 
 
 # 경로 → (함수, 필요한 권한). None=누구나, user=로그인, admin, super
-GET = {"/api/me": (get_me, None), "/api/items": (items, "user"), "/api/week": (week, None),
-       "/api/my_reservations": (my_reservations, "user"), "/api/events": (events, None), "/api/event": (event, None),
+GET = {"/api/me": (get_me, None), "/api/items": (items, "user"), "/api/week": (week, "user"),
+       "/api/my_reservations": (my_reservations, "user"), "/api/events": (events, "user"), "/api/event": (event, "user"),
+       "/api/banners": (banners, None), "/api/notices": (notices, None), "/api/notice": (notice, None),
+       "/api/admin/notices": (admin_notices, "admin"), "/api/admin/notice": (admin_notice, "admin"),
        "/api/admin/items": (admin_items, "admin"), "/api/admin/qr.pdf": (admin_qr_pdf, "admin"),
        "/api/admin/events": (admin_events, "admin"), "/api/admin/applications": (admin_applications, "admin"),
        "/api/admin/users": (admin_users, "super")}
@@ -602,6 +779,7 @@ POST = {"/api/signup": (signup, None), "/api/login": (login, None), "/api/logout
         "/api/apply": (apply, "user"), "/api/admin/item_add": (admin_item_add, "admin"),
         "/api/admin/item_del": (admin_item_del, "admin"), "/api/admin/item_return": (admin_item_return, "admin"),
         "/api/admin/event_save": (admin_event_save, "admin"), "/api/admin/event_del": (admin_event_del, "admin"),
+        "/api/admin/notice_save": (admin_notice_save, "admin"), "/api/admin/notice_del": (admin_notice_del, "admin"),
         "/api/admin/role": (admin_role, "super")}
 RANK = {None: 0, "user": 1, "admin": 2, "super": 3}
 STATIC = {"/": ("index.html", "text/html; charset=utf-8")}

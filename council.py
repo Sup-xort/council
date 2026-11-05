@@ -33,8 +33,9 @@ import segno  # noqa: E402
 
 HOST, PORT = "127.0.0.1", int(os.environ.get("COUNCIL_PORT", 8792))
 DB = os.environ.get("COUNCIL_DB", os.path.join(BASE, "data", "council.db"))
-ORIGIN = "https://sqhsxp.duckdns.org"
-QR_PREFIX = ORIGIN + "/council/q/"
+ORIGIN = os.environ.get("COUNCIL_ORIGIN", "https://sqhsxp.duckdns.org")
+PREFIX = os.environ.get("COUNCIL_PREFIX", "/council")  # 루트에 호스팅하면 ""
+QR_PREFIX = ORIGIN + PREFIX + "/q/"
 KST = ZoneInfo("Asia/Seoul")
 
 COOKIE = "scene_sid"
@@ -216,7 +217,7 @@ def forgot(c, me, b, q):
         mail_later(u["email"], "[SWITCH] 아이디 / 비밀번호 찾기",
                    f"{u['name']} 님, 아이디는 {u['username']} 입니다.\n\n"
                    f"비밀번호를 바꾸려면 {RESET_MIN}분 안에 아래 링크를 여세요.\n"
-                   f"{ORIGIN}/council/#/reset/{tok}\n\n요청하지 않았다면 이 메일은 무시하셔도 됩니다.")
+                   f"{ORIGIN}{PREFIX}/#/reset/{tok}\n\n요청하지 않았다면 이 메일은 무시하셔도 됩니다.")
     return {"ok": True}
 
 
@@ -626,7 +627,7 @@ class H(BaseHTTPRequestHandler):
 
     def cookie(self, tok):
         age = SESSION_DAYS * 86400 if tok else 0
-        return ("Set-Cookie", f"{COOKIE}={tok}; Path=/council/; Max-Age={age}; HttpOnly; Secure; SameSite=Lax")
+        return ("Set-Cookie", f"{COOKIE}={tok}; Path={PREFIX}/; Max-Age={age}; HttpOnly; Secure; SameSite=Lax")
 
     def do_HEAD(self):
         self.do_GET()

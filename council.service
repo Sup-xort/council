@@ -5,10 +5,10 @@ After=network.target
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/projects/Council
+WorkingDirectory=/home/ubuntu/council
 Environment=PYTHONUNBUFFERED=1
-EnvironmentFile=-/home/ubuntu/projects/Council/council.env
-ExecStart=/usr/bin/python3 /home/ubuntu/projects/Council/council.py
+EnvironmentFile=-/home/ubuntu/council/council.env
+ExecStart=/usr/bin/python3 /home/ubuntu/council/council.py
 Restart=on-failure
 RestartSec=3
 

@@ -107,7 +107,8 @@ assert b.call("/api/apply", {"event_id": eid, "answers": {"0": "S"}})[0] == 403
 
 # 접근 규칙: 비로그인은 배너·행사 공지·배너에 오른 학과 공지만
 anon = Client()
-for path in ("/api/week", "/api/events", f"/api/event?id={eid}", "/api/items", "/api/notices?kind=dept"):
+assert anon.call("/api/week")[0] == 200 and anon.call("/api/events")[0] == 200
+for path in (f"/api/event?id={eid}", "/api/items", "/api/notices?kind=dept"):
     assert anon.call(path)[0] == 401, path
 
 # 공지: 칩 검증, 분류별 공개 범위

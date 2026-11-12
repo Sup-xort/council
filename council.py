@@ -40,7 +40,7 @@ KST = ZoneInfo("Asia/Seoul")
 
 COOKIE = "scene_sid"
 RESET_MIN = 30                         # 비밀번호 재설정 링크 유효시간
-SESSION_DAYS = 90                      # 쓸 때마다 다시 90일 — 자주 쓰는 사람은 로그인이 안 풀린다
+SESSION_DAYS = 400                     # 브라우저가 허용하는 쿠키 최대 수명 — 쓸 때마다 다시 400일이라 사실상 로그인이 풀리지 않는다
 PBKDF2_ITER = 200_000
 MAX_BODY = 256 * 1024
 CODE_CHARS = "abcdefghjkmnpqrstuvwxyz23456789"   # 헷갈리는 0/o, 1/l/i 제외
@@ -511,7 +511,7 @@ def gauge(c, e):
 
 def events(c, me, b, q):
     rows = c.execute("SELECT * FROM events WHERE on_lobby=1 ORDER BY deadline DESC").fetchall()
-    mine = {r[0] for r in c.execute("SELECT event_id FROM applications WHERE user_id=?", (me["id"],))}
+    mine = {r[0] for r in c.execute("SELECT event_id FROM applications WHERE user_id=?", (me["id"],))} if me else set()
     return {"events": [dict(event_out(e), applied=e["id"] in mine, gauge=gauge(c, e)) for e in rows]}
 
 
@@ -766,8 +766,8 @@ def admin_role(c, me, b, q):
 
 
 # 경로 → (함수, 필요한 권한). None=누구나, user=로그인, admin, super
-GET = {"/api/me": (get_me, None), "/api/items": (items, "user"), "/api/week": (week, "user"),
-       "/api/my_reservations": (my_reservations, "user"), "/api/events": (events, "user"), "/api/event": (event, "user"),
+GET = {"/api/me": (get_me, None), "/api/items": (items, "user"), "/api/week": (week, None),
+       "/api/my_reservations": (my_reservations, "user"), "/api/events": (events, None), "/api/event": (event, "user"),
        "/api/banners": (banners, None), "/api/notices": (notices, None), "/api/notice": (notice, None),
        "/api/admin/notices": (admin_notices, "admin"), "/api/admin/notice": (admin_notice, "admin"),
        "/api/admin/items": (admin_items, "admin"), "/api/admin/qr.pdf": (admin_qr_pdf, "admin"),

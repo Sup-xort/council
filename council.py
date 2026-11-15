@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS notices(id INTEGER PRIMARY KEY, kind TEXT NOT NULL CH
   event_id INTEGER REFERENCES events ON DELETE SET NULL, on_lobby INTEGER NOT NULL DEFAULT 0,
   author_id INTEGER REFERENCES users ON DELETE SET NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS kind_hours(kind TEXT PRIMARY KEY, hours INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS pulled(src TEXT PRIMARY KEY, at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS resets(token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
   expires TEXT NOT NULL);
@@ -560,6 +561,31 @@ def build_pdf(contents, w, h):
 
 # ── 세미나실 ────────────────────────────────────────────────────────────
 
+def room_rules(c):
+    """세미나실 규칙. week_hours = 한 주(월~일)에 한 사람이 예약할 수 있는 최대 시간, cancel_hours = 시작 몇 시간 전까지 취소할 수 있는지. 0 = 제한 없음."""
+    r = {x["key"]: x["value"] for x in c.execute("SELECT key, value FROM settings")}
+    return {"week_hours": r.get("week_hours", 0), "cancel_hours": r.get("cancel_hours", 0)}
+
+
+def monday(d):
+    return (d - timedelta(days=d.weekday())).isoformat()
+
+
+def week_used(c, user_id, d):
+    """d 가 속한 주(월~일)에 이 사람이 이미 예약한 시간 수"""
+    m = date.fromisoformat(monday(d))
+    return c.execute("SELECT COUNT(*) FROM reservations WHERE user_id=? AND date BETWEEN ? AND ?",
+                     (user_id, m.isoformat(), (m + timedelta(days=6)).isoformat())).fetchone()[0]
+
+
+def admin_room_rules(c, me, b, q):
+    if b:
+        for k in ("week_hours", "cancel_hours"):
+            v = need_int(b.get(k) or 0, 0, 24 * 7 if k == "week_hours" else 24 * 30, "시간 수")
+            c.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (k, v))
+    return room_rules(c)
+
+
 def week(c, me, b, q):
     try:
         start = date.fromisoformat(q.get("start", [""])[0])
@@ -574,7 +600,9 @@ def week(c, me, b, q):
             "rooms": [dict(r) for r in c.execute("SELECT * FROM rooms ORDER BY id")],
             "reservations": [{"id": r["id"], "room_id": r["room_id"], "date": r["date"], "hour": r["hour"],
                               "mine": bool(me and r["user_id"] == me["id"]),
-                              "who": f"{r['name']} {r['student_id']}" if admin else mask(r["name"])} for r in rows]}
+                              "who": f"{r['name']} {r['student_id']}" if admin else mask(r["name"])} for r in rows],
+            "rules": room_rules(c),
+            "used": {m: n for m, n in c.execute("SELECT date, COUNT(*) FROM reservations WHERE user_id=? GROUP BY date", (me["id"],))} if me else {}}
 
 
 def reserve(c, me, b, q):
@@ -590,6 +618,9 @@ def reserve(c, me, b, q):
         raise Err(400, "없는 세미나실입니다")
     if datetime.combine(d, datetime.min.time()) + timedelta(hours=hours[0] + 1) <= now():
         raise Err(400, "지난 시간은 예약할 수 없습니다")
+    cap = room_rules(c)["week_hours"]
+    if cap and me["role"] not in ("admin", "super") and week_used(c, me["id"], d) + len(hours) > cap:
+        raise Err(400, f"한 주에 {cap}시간까지만 예약할 수 있습니다")
     try:
         t = stamp()
         c.executemany("INSERT INTO reservations(room_id,user_id,date,hour,created_at) VALUES(?,?,?,?,?)",
@@ -606,8 +637,15 @@ def unreserve(c, me, b, q):
         ids = [int(x) for x in (b.get("ids") or [b.get("id")])][:48]
     except (TypeError, ValueError):
         raise Err(400, "요청을 처리하지 못했습니다. 새로고침한 뒤 다시 시도해 주십시오")
+    lead = room_rules(c)["cancel_hours"]
+    admin = me["role"] in ("admin", "super")
+    if lead and not admin:
+        for i in ids:
+            r = c.execute("SELECT date, hour FROM reservations WHERE id=? AND user_id=?", (i, me["id"])).fetchone()
+            if r and datetime.fromisoformat(r["date"]) + timedelta(hours=r["hour"] - lead) < now():
+                raise Err(400, f"시작 {lead}시간 전까지만 취소할 수 있습니다")
     for i in ids:
-        if me["role"] in ("admin", "super"):
+        if admin:
             c.execute("DELETE FROM reservations WHERE id=?", (i,))
         else:
             c.execute("DELETE FROM reservations WHERE id=? AND user_id=?", (i, me["id"]))
@@ -640,7 +678,7 @@ def my_reservations(c, me, b, q):
     rows = c.execute("""SELECT r.id, r.date, r.hour, m.name AS room FROM reservations r JOIN rooms m ON m.id=r.room_id
                         WHERE r.user_id=? AND r.date >= ? ORDER BY r.date, r.hour""",
                      (me["id"], now().date().isoformat())).fetchall()
-    return {"reservations": [dict(r) for r in rows]}
+    return {"reservations": [dict(r) for r in rows], "rules": room_rules(c)}
 
 
 # ── 행사 ────────────────────────────────────────────────────────────────
@@ -1390,7 +1428,7 @@ def admin_handover(c, me, b, q):
 
 
 # 경로 → (함수, 필요한 권한). None=누구나, user=로그인, admin, super
-GET = {"/api/me": (get_me, None), "/api/items": (items, "user"), "/api/week": (week, None),
+GET = {"/api/me": (get_me, None), "/api/items": (items, "user"), "/api/week": (week, None), "/api/admin/room_rules": (admin_room_rules, "admin"),
        "/api/my_reservations": (my_reservations, "user"), "/api/events": (events, None), "/api/event": (event, "user"),
        "/api/banners": (banners, None), "/api/notices": (notices, None), "/api/notice": (notice, None),
        "/api/admin/notices": (admin_notices, "admin"), "/api/admin/notice": (admin_notice, "admin"),
@@ -1402,7 +1440,7 @@ POST = {"/api/signup": (signup, None), "/api/login": (login, None), "/api/logout
         "/api/forgot": (forgot, None), "/api/reset": (reset, None),
         "/api/scan": (scan, "user"), "/api/reserve": (reserve, "user"), "/api/unreserve": (unreserve, "user"),
         "/api/apply": (apply, "user"), "/api/admin/item_add": (admin_item_add, "admin"),
-        "/api/admin/item_del": (admin_item_del, "admin"), "/api/admin/item_return": (admin_item_return, "admin"), "/api/admin/kind_hours": (admin_kind_hours, "admin"),
+        "/api/admin/item_del": (admin_item_del, "admin"), "/api/admin/item_return": (admin_item_return, "admin"), "/api/admin/kind_hours": (admin_kind_hours, "admin"), "/api/admin/room_rules": (admin_room_rules, "admin"),
         "/api/admin/event_save": (admin_event_save, "admin"), "/api/admin/event_del": (admin_event_del, "admin"),
         "/api/admin/notice_save": (admin_notice_save, "admin"), "/api/admin/notice_del": (admin_notice_del, "admin"),
         "/api/admin/upload": (admin_upload, "admin"), "/api/admin/dues": (admin_dues, "admin"), "/api/admin/cells": (admin_cells, "admin"), "/api/admin/role": (admin_role, "super"),

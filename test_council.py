@@ -119,6 +119,32 @@ assert b.call("/api/unreserve", {"ids": "x"})[0] == 400
 assert a.call("/api/unreserve", {"ids": bob_r[0]["ids"]})[0] == 200
 assert b.call("/api/my_reservations")[1]["reservations"] == []
 
+# 세미나실 규칙: 주 최대 시간·취소 가능 시간
+dd0 = council.now().date() + timedelta(days=8)
+dd0 += timedelta(days=(2 - dd0.weekday()) % 7)
+wd, wd2 = dd0.isoformat(), (dd0 + timedelta(days=1)).isoformat()
+assert b.call("/api/admin/room_rules")[0] == 403 and b.call("/api/admin/room_rules", {"week_hours": 2})[0] == 403
+assert a.call("/api/admin/room_rules")[1] == {"week_hours": 0, "cancel_hours": 0}
+assert a.call("/api/admin/room_rules", {"week_hours": "x"})[0] == 400
+assert a.call("/api/admin/room_rules", {"week_hours": 2, "cancel_hours": 3})[1] == {"week_hours": 2, "cancel_hours": 3}
+assert b.call("/api/reserve", {"room_id": 1, "date": wd, "hours": [9, 10, 11]})[0] == 400      # 3/2
+assert b.call("/api/reserve", {"room_id": 1, "date": wd, "hours": [9]})[0] == 200
+assert b.call("/api/reserve", {"room_id": 1, "date": wd2, "hours": [9, 10]})[0] == 400         # 같은 주 합산 3/2
+assert b.call("/api/reserve", {"room_id": 1, "date": wd2, "hours": [9]})[0] == 200
+assert b.call("/api/reserve", {"room_id": 2, "date": wd, "hours": [20]})[0] == 400
+assert a.call("/api/reserve", {"room_id": 2, "date": wd, "hours": [20, 21, 22]})[0] == 200      # 관리자는 제한 없음
+assert b.call(f"/api/week?start={wd}")[1]["rules"]["week_hours"] == 2
+mine_ids = [r["id"] for r in b.call("/api/my_reservations")[1]["reservations"]]
+assert b.call("/api/unreserve", {"ids": mine_ids})[0] == 200                                    # 멀리 남아 취소 가능
+soon = council.now() + timedelta(hours=1)
+assert b.call("/api/reserve", {"room_id": 1, "date": soon.date().isoformat(), "hours": [soon.hour]})[0] in (200, 400)
+if b.call("/api/my_reservations")[1]["reservations"]:
+    r = b.call("/api/my_reservations")[1]["reservations"][0]
+    assert b.call("/api/unreserve", {"ids": [r["id"]]})[0] == 400                               # 3시간 안이라 취소 불가
+assert a.call("/api/admin/room_rules", {"week_hours": 0, "cancel_hours": 0})[0] == 200
+for r in a.call("/api/admin/reservations")[1]["reservations"]:
+    a.call("/api/unreserve", {"ids": r["ids"]})
+
 # 행사: 필수 항목 검사, 마감 전 수정, 마감 후 거부
 fields = [{"label": "사이즈", "type": "select", "options": ["S", "M"], "required": True},
           {"label": "참석", "type": "checkbox"}]

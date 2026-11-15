@@ -1,11 +1,13 @@
-// 표 도구: 검색 · 열별 필터 · 기간 · 정렬 · 묶음 · 고르기 · 칸 바로 고치기 · 더 보기
+// 표 도구 (Astryx 표 위에): 검색 · 항목별 필터 · 기간 · 정렬 · 묶음 · 고르기 · 칸 바로 고치기 · 더 보기
 // columns: {k, label, type:'text'|'num'|'date', val:r=>정렬·필터 값, text:r=>보이는 글자, cell:r=>보이는 화면,
 //           filter:'choice'|'text'|false, period:true(기간 필터를 걸 날짜 열), title:true(카드 제목),
 //           act:r=>[[이름, 글, 모양], …] (줄 끝 단추), edit:'text'|'num'|'date'|'datetime'|'select'|'multi'|'check', options, raw:r=>고칠 때 처음 값}
 // 필터 상태는 주소(#/loans?q=…)에 남는다. 새로고침하거나 주소를 보내도 같은 화면이 나온다. urlState:false 면 남기지 않는다.
 import {useEffect, useImperativeHandle, useMemo, useState} from 'react';
-import {Button} from '@astryxdesign/core/Button';
-import {TextInput} from '@astryxdesign/core/TextInput';
+import {Table, useTableSortable, useTableSelection} from '@astryxdesign/core/Table';
+import {DateInput} from '@astryxdesign/core/DateInput';
+import {Card, Badge, Text, HStack, VStack, Grid, Button, TextInput, Selector, CheckboxInput, EmptyState, MetadataList, MetadataListItem, Collapsible} from '../ui/ax.js';
+import {Search, SlidersHorizontal} from 'lucide-react';
 import {iso, addDays, koStamp} from '../lib/common.js';
 
 const narrowMQ = matchMedia('(max-width:759px)');      // 이보다 좁으면 표 대신 카드
@@ -15,9 +17,32 @@ function useNarrow() {
   return n;
 }
 const LIMIT = 200;
+const ALL = '__all';
+
+// 한 묶음(또는 묶음 없는 전체)의 표. 정렬·고르기는 Astryx 표 플러그인이 그린다.
+function GroupTable({items, cols, sort, onSort, select, picked, setPicked, cell}) {
+  const sortable = useTableSortable({sort, onSortChange: onSort, allowUnsortedState: true});
+  const selection = useTableSelection({
+    getIsItemSelected: it => picked.has(it.__i),
+    onSelectItem: ({item, isSelected}) => setPicked(s => { const n = new Set(s); isSelected ? n.add(item.__i) : n.delete(item.__i); return n; }),
+    getIsAllSelected: () => items.length > 0 && items.every(it => picked.has(it.__i)),
+    getIsIndeterminate: () => items.some(it => picked.has(it.__i)) && !items.every(it => picked.has(it.__i)),
+    onSelectAll: ({isAllSelected}) => setPicked(s => { const n = new Set(s); items.forEach(it => isAllSelected ? n.add(it.__i) : n.delete(it.__i)); return n; }),
+    getRowLabel: it => cols[0].text(it.__r),
+  });
+  // 줄 끝 단추 칸은 단추가 다 들어가는 너비로 고정한다 (글자 수로 어림)
+  const actW = c => Math.max(0, ...items.map(it => c.act(it.__r).reduce((w, [, l]) => w + l.length * 14 + 28, 0))) + 16;
+  const columns = cols.map(c => ({
+    key: c.k, header: c.label, sortable: !c.act, align: c.type === 'num' ? 'end' : undefined,
+    width: c.act ? {type: 'pixel', value: actW(c)} : undefined,
+    renderCell: it => cell(c, it.__r, it.__i),
+  }));
+  return <div className="dt-scroll"><Table data={items} columns={columns} idKey="__k" density="compact" hasHover textOverflow="wrap"
+    plugins={select ? {sortable, selection} : {sortable}} /></div>;
+}
 
 export default function DataTable({ref, path, columns, rows, onAction, onSave, select = false, empty = '아직 아무것도 없습니다.',
-  search = '이름, 학번으로 찾기', group, groupHead, urlState = true}) {
+  search = '이름, 학번으로 찾기', group, groupHead, cardTitle, urlState = true}) {
   const narrow = useNarrow();
   const cols = useMemo(() => columns.map(c0 => {
     const c = {filter: c0.type === 'date' || c0.act ? false : 'text', type: 'text', ...c0};
@@ -35,11 +60,12 @@ export default function DataTable({ref, path, columns, rows, onAction, onSave, s
     return {q: p.get('q') || '', from: p.get('from') || '', to: p.get('to') || '', s: p.get('s') || '', d: p.get('d') === 'desc' ? -1 : 1, f};
   });
   const [limit, setLimit] = useState(LIMIT);
-  const [closed, setClosed] = useState(() => new Set());   // 접어 둔 묶음
   const [picked, setPicked] = useState(() => new Set());
   const [editing, setEditing] = useState(false);
   const [edits, setEdits] = useState(() => new Map());     // 줄 번호 → {칸: 새 값}
   const [saving, setSaving] = useState(false);
+  const nf = Object.values(st.f).filter(Boolean).length;
+  const [showF, setShowF] = useState(nf > 0);
 
   const set = patch => { setSt(s => ({...s, ...patch})); setLimit(LIMIT); };
   useEffect(() => {
@@ -51,7 +77,7 @@ export default function DataTable({ref, path, columns, rows, onAction, onSave, s
     const s = p.toString();
     history.replaceState(null, '', '#' + base + (s ? '?' + s : ''));
   }, [st]);
-  const active = !!(st.q || st.from || st.to || Object.values(st.f).some(Boolean));
+  const active = !!(st.q || st.from || st.to || nf);
 
   const idx = useMemo(() => {
     const q = st.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -106,93 +132,85 @@ export default function DataTable({ref, path, columns, rows, onAction, onSave, s
     setEditing(false); setEdits(new Map());
   }
 
+  // 칸 고치기: 모두 Astryx 입력 부품
   const editor = (c, r, i) => {
-    const v = cur(c, r, i), on = x => setEdit(i, c.k, x), a = {'aria-label': c.label};
-    if (c.edit === 'select') return <select className="in ce" {...a} value={v ?? ''} onChange={e => on(e.target.value)}><option value="" />{c.options.map(o => <option key={o}>{o}</option>)}</select>;
-    if (c.edit === 'multi') return <div className="multi" {...a}>{c.options.map(o => <label className="chk" key={o}>
-      <input type="checkbox" checked={(v || []).includes(o)} onChange={e => on(e.target.checked ? [...(v || []), o] : (v || []).filter(x => x !== o))} />{o}</label>)}</div>;
-    if (c.edit === 'check') return <input type="checkbox" {...a} checked={!!v} onChange={e => on(e.target.checked)} />;
-    const t = c.edit === 'num' ? 'number' : c.edit === 'datetime' ? 'datetime-local' : c.edit === 'date' ? 'date' : 'text';
-    return <input className="in ce" type={t} min={c.edit === 'num' ? 1 : undefined} {...a} value={v ?? ''} onChange={e => on(e.target.value)} />;
+    const v = cur(c, r, i), on = x => setEdit(i, c.k, x), a = {label: c.label, isLabelHidden: true, size: 'sm'};
+    if (c.edit === 'select') return <Selector {...a} options={c.options} value={v || undefined} onChange={on} width="100%" />;
+    if (c.edit === 'multi') return <HStack gap={2} wrap="wrap">{c.options.map(o =>
+      <CheckboxInput key={o} label={o} size="sm" value={(v || []).includes(o)} onChange={x => on(x ? [...(v || []), o] : (v || []).filter(y => y !== o))} />)}</HStack>;
+    if (c.edit === 'check') return <CheckboxInput label={c.label} isLabelHidden value={!!v} onChange={on} />;
+    if (c.edit === 'date') return <DateInput {...a} value={v || undefined} onChange={x => on(x || '')} width="100%" />;
+    if (c.edit === 'datetime') return <input className="ce" type="datetime-local" aria-label={c.label} value={v ?? ''} onChange={e => on(e.target.value)} />;
+    return <TextInput {...a} type="text" value={String(v ?? '')} onChange={on} inputMode={c.edit === 'num' ? 'numeric' : undefined} width="100%" />;
   };
-  const acts = (c, r) => <div className="inline">{c.act(r).map(([k, label, variant = 'secondary']) =>
-    <Button key={k} label={label} size="sm" variant={variant} onClick={() => onAction?.(k, r)} />)}</div>;
+  const acts = (c, r) => <HStack gap={1} wrap="nowrap">{c.act(r).map(([k, label, variant = 'secondary']) =>
+    <Button key={k} label={label} size="sm" variant={variant} onClick={() => onAction?.(k, r)} />)}</HStack>;
   const cell = (c, r, i) => editing && c.edit ? editor(c, r, i) : c.act ? acts(c, r) : c.cell ? c.cell(r) : c.text(r);
   const fctl = c => c.filter === 'choice'
-    ? <select className="in" aria-label={`${c.label} 고르기`} value={st.f[c.k] || ''} onChange={e => set({f: {...st.f, [c.k]: e.target.value}})}>
-      <option value="">전체</option>{choices(c).map(v => <option key={v}>{v}</option>)}</select>
-    : c.filter === 'text' ? <input className="in" value={st.f[c.k] || ''} placeholder="찾기" aria-label={`${c.label}에서 찾기`} onChange={e => set({f: {...st.f, [c.k]: e.target.value}})} /> : null;
-  const sortBy = k => setSt(s => ({...s, d: s.s === k ? -s.d : 1, s: k}));
+    ? <Selector label={c.label} size="sm" options={[{value: ALL, label: '전체'}, ...choices(c).map(v => ({value: v, label: v}))]} value={st.f[c.k] || ALL}
+      onChange={v => set({f: {...st.f, [c.k]: v === ALL ? '' : v}})} hasSearch={choices(c).length > 8} />
+    : <TextInput label={c.label} size="sm" value={st.f[c.k] || ''} placeholder="찾기" onChange={v => set({f: {...st.f, [c.k]: v}})} hasClear />;
   const quick = kind => { const t = iso(new Date()); set({to: t, from: kind === 'today' ? t : kind === '7' ? addDays(t, -6) : t.slice(0, 8) + '01'}); };
-  const pick = (i, on) => setPicked(s => { const n = new Set(s); on ? n.add(i) : n.delete(i); return n; });
+  const sort = st.s ? [{sortKey: st.s, direction: st.d > 0 ? 'ascending' : 'descending'}] : [];
+  const onSort = s => set({s: s[0]?.sortKey || '', d: s[0]?.direction === 'descending' ? -1 : 1});
 
-  // 묶음이 바뀌는 곳마다 머리글을 끼우고, 접힌 묶음의 행은 건너뛴다
-  const part = idx.slice(0, limit), members = {};
-  if (group) idx.forEach(i => (members[group(rows[i])] ||= []).push(rows[i]));
-  const ncol = cols.length + (select ? 1 : 0);
-  const out = []; let last;
+  // 보이는 줄을 묶음으로 나눈다
+  const part = idx.slice(0, limit);
+  const groups = [];
   for (const i of part) {
-    const r = rows[i];
-    if (group) {
-      const k = group(r);
-      if (k !== last) {
-        last = k;
-        const head = <button type="button" className="gbtn" aria-expanded={!closed.has(k)}
-          onClick={() => setClosed(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; })}>
-          <span aria-hidden="true" className={'tw' + (closed.has(k) ? '' : ' open')}>▸</span> {groupHead(k, members[k])}</button>;
-        out.push(narrow ? <h3 className="gh" key={'g' + k}>{head}</h3> : <tr className="gh" key={'g' + k}><td colSpan={ncol}>{head}</td></tr>);
-      }
-      if (closed.has(k)) continue;
-    }
-    if (narrow) {
-      const tc = cols.find(c => c.title) || cols[0], ac = cols.find(c => c.act);
-      out.push(<article className="rc" key={r.id ?? i}>
-        <div className="t">{select && <input type="checkbox" checked={picked.has(i)} onChange={e => pick(i, e.target.checked)} aria-label="고르기" />}<span>{cell(tc, r, i)}</span></div>
-        <dl>{cols.filter(c => c !== tc && !c.act).map(c => <div key={c.k} style={{display: 'contents'}}><dt>{c.label}</dt><dd>{cell(c, r, i)}</dd></div>)}</dl>
-        {ac && acts(ac, r)}</article>);
-    } else {
-      out.push(<tr key={r.id ?? i}>
-        {select && <td className="ck"><input type="checkbox" checked={picked.has(i)} onChange={e => pick(i, e.target.checked)} aria-label="고르기" /></td>}
-        {cols.map(c => <td key={c.k} className={c.act ? 'act' : c.type === 'num' ? 'num' : ''} title={c.act ? undefined : c.text(r)}>{cell(c, r, i)}</td>)}</tr>);
-    }
+    const k = group ? group(rows[i]) : '';
+    if (!groups.length || groups[groups.length - 1].k !== k) groups.push({k, items: []});
+    groups[groups.length - 1].items.push({__i: i, __k: String(rows[i].id ?? i), __r: rows[i]});
   }
-  const none = active ? '찾는 조건에 맞는 것이 없습니다.' : empty;
-  const allOn = idx.length > 0 && idx.every(i => picked.has(i));
+  const members = {}; if (group) idx.forEach(i => (members[group(rows[i])] ||= []).push(rows[i]));
+  const none = active ? '찾는 조건에 맞는 것이 없습니다' : empty;
 
-  return <div className="dt-host">
-    <div className="dt-tools">
-      <div className="q"><TextInput type="search" label="찾기" isLabelHidden value={st.q} placeholder={search} onChange={v => set({q: v})} hasClear size="md" /></div>
-      {pcol && <div className="dt-period"><span className="lab">{pcol.label}</span>
-        <input className="in" type="date" value={st.from} aria-label="시작일" onChange={e => set({from: e.target.value})} /><span className="lab">~</span>
-        <input className="in" type="date" value={st.to} aria-label="끝일" onChange={e => set({to: e.target.value})} />
-        <Button label="오늘" size="sm" variant="secondary" onClick={() => quick('today')} />
-        <Button label="최근 7일" size="sm" variant="secondary" onClick={() => quick('7')} />
-        <Button label="이번 달" size="sm" variant="secondary" onClick={() => quick('month')} /></div>}
-      {active && <Button label="필터 지우기" size="sm" variant="ghost" onClick={() => set({q: '', from: '', to: '', f: {}})} />}
-      <span className="dt-count" aria-live="polite">전체 {rows.length.toLocaleString()}건{active ? ` 중 ${idx.length.toLocaleString()}건` : ''}</span>
-      {onSave && (editing ? <><Button label="저장" size="sm" variant="primary" isLoading={saving} onClick={() => leaveEdit(true)} />
-        <Button label="취소" size="sm" variant="secondary" onClick={() => leaveEdit(false)} /></>
-        : <Button label="수정" size="sm" variant="secondary" onClick={() => setEditing(true)} />)}
-      {narrow && <details className="dt-flt" open={Object.values(st.f).some(Boolean) || undefined}><summary>항목별 필터와 정렬</summary><div className="grid">
-        {cols.filter(c => c.filter).map(c => <label key={c.k}>{c.label}{fctl(c)}</label>)}
-        <label>정렬<select className="in" value={st.s ? `${st.s}:${st.d}` : ''} onChange={e => { const [k, d] = e.target.value.split(':'); set({s: k || '', d: +d || 1}); }}>
-          <option value="">기본</option>{cols.filter(c => !c.act).map(c => [1, -1].map(d =>
-            <option key={c.k + d} value={`${c.k}:${d}`}>{c.label} {d > 0 ? '오름차순' : '내림차순'}</option>))}</select></label>
-      </div></details>}
-    </div>
-    {narrow ? <div className="dt-cards">{out.length ? out : <div className="dt-empty box">{none}</div>}</div>
-      : <div className="dt-wrap"><table className="dt"><thead><tr>
-        {select && <th className="ck"><input type="checkbox" aria-label="보이는 행 모두 고르기" checked={allOn}
-          onChange={e => setPicked(s => { const n = new Set(s); idx.forEach(i => e.target.checked ? n.add(i) : n.delete(i)); return n; })} /></th>}
-        {cols.map(c => <th key={c.k} className={c.type === 'num' ? 'num' : ''}>{c.act ? <span className="sort" />
-          : <button className="sort" onClick={() => sortBy(c.k)} aria-sort={st.s === c.k ? (st.d > 0 ? 'ascending' : 'descending') : undefined}>
-            {c.label}<span aria-hidden="true" className={'arr' + (st.s === c.k ? ' on' : '')}>{st.s === c.k && st.d < 0 ? '▼' : '▲'}</span></button>}</th>)}</tr>
-        {cols.some(c => c.filter) && <tr className="flt">{select && <th />}{cols.map(c => <th key={c.k}>{fctl(c)}</th>)}</tr>}</thead>
-        <tbody>{out.length ? out : <tr><td colSpan={ncol} className="dt-empty">{none}</td></tr>}</tbody></table></div>}
-    {idx.length > limit && <div className="dt-more"><Button label={`${LIMIT}건 더 보기`} variant="secondary" onClick={() => setLimit(l => l + LIMIT)} /></div>}
-  </div>;
+  const cards = items => <VStack gap={2} className={group ? 'dt-inner' : undefined}>{items.map(({__i: i, __r: r}) => {
+    const tc = cols.find(c => c.k === cardTitle) || cols.find(c => c.title) || cols[0], ac = cols.find(c => c.act);
+    return <Card key={r.id ?? i} padding={4} variant={group ? 'muted' : undefined}><VStack gap={3}>
+      <HStack gap={2} vAlign="center">{select && <CheckboxInput label="고르기" isLabelHidden value={picked.has(i)}
+        onChange={x => setPicked(s => { const n = new Set(s); x ? n.add(i) : n.delete(i); return n; })} />}
+        <Text weight="semibold">{cell(tc, r, i)}</Text></HStack>
+      <MetadataList columns="single">{cols.filter(c => c !== tc && !c.act && (editing && c.edit || c.cell?.(r) || c.text(r))).map(c =>
+        <MetadataListItem key={c.k} label={c.label}>{cell(c, r, i)}</MetadataListItem>)}</MetadataList>
+      {ac && acts(ac, r)}
+    </VStack></Card>;
+  })}</VStack>;
+  const body = items => narrow ? cards(items)
+    : <GroupTable items={items} cols={cols} sort={sort} onSort={onSort} select={select} picked={picked} setPicked={setPicked} cell={cell} />;
+
+  return <VStack gap={3}>
+    <HStack gap={2} wrap="wrap" vAlign="end">
+      <div className="dt-q"><TextInput type="search" label="찾기" isLabelHidden value={st.q} placeholder={search} onChange={v => set({q: v})} hasClear startIcon={<Search size={16} />} /></div>
+      {pcol && <div className="dt-period">
+        <DateInput label={`${pcol.label} 시작`} isLabelHidden placeholder={`${pcol.label} 부터`} value={st.from || undefined} onChange={v => set({from: v || ''})} hasClear width="100%" />
+        <DateInput label={`${pcol.label} 끝`} isLabelHidden placeholder="까지" value={st.to || undefined} onChange={v => set({to: v || ''})} hasClear width="100%" />
+        <HStack gap={1} className="dt-quick">
+          <Button label="오늘" size="sm" variant="ghost" onClick={() => quick('today')} />
+          <Button label="최근 7일" size="sm" variant="ghost" onClick={() => quick('7')} />
+          <Button label="이번 달" size="sm" variant="ghost" onClick={() => quick('month')} /></HStack></div>}
+      <Button label="항목별 필터" variant={showF ? 'primary' : 'secondary'} icon={<SlidersHorizontal size={16} />} onClick={() => setShowF(x => !x)}
+        endContent={nf ? <Badge variant="neutral" label={nf} /> : undefined} />
+      {active && <Button label="필터 지우기" variant="ghost" onClick={() => set({q: '', from: '', to: '', f: {}})} />}
+      <span className="dt-sp" />
+      <Text type="supporting" color="secondary" aria-live="polite">전체 {rows.length.toLocaleString()}건{active ? ` 중 ${idx.length.toLocaleString()}건` : ''}</Text>
+      {onSave && (editing ? <><Button label="저장" variant="primary" isLoading={saving} onClick={() => leaveEdit(true)} />
+        <Button label="취소" variant="secondary" onClick={() => leaveEdit(false)} /></>
+        : <Button label="수정" variant="secondary" onClick={() => setEditing(true)} />)}
+    </HStack>
+    {showF && <Card variant="muted" padding={3} className="enter"><Grid columns={{minWidth: 170, repeat: 'fill'}} gap={3}>
+      {cols.filter(c => c.filter).map(c => <div key={c.k}>{fctl(c)}</div>)}
+      {narrow && <Selector label="정렬" size="sm" value={st.s ? `${st.s}:${st.d}` : ALL} onChange={v => { const [k, d] = v === ALL ? [] : v.split(':'); set({s: k || '', d: +d || 1}); }}
+        options={[{value: ALL, label: '기본'}, ...cols.filter(c => !c.act).flatMap(c => [1, -1].map(d => ({value: `${c.k}:${d}`, label: `${c.label} ${d > 0 ? '오름차순' : '내림차순'}`})))]} />}
+    </Grid></Card>}
+    {!groups.length ? <Card><EmptyState isCompact title={none} /></Card>
+      : group ? <VStack gap={3}>{groups.map(g => <Card key={g.k} padding={0} className="dt-group">
+        <Collapsible defaultIsOpen trigger={<div className="dt-gh">{groupHead(g.k, members[g.k])}</div>}>{body(g.items)}</Collapsible></Card>)}</VStack>
+        : narrow ? body(groups[0].items) : <Card padding={0}>{body(groups[0].items)}</Card>}
+    {idx.length > limit && <HStack hAlign="center"><Button label={`${LIMIT}건 더 보기`} variant="secondary" onClick={() => setLimit(l => l + LIMIT)} /></HStack>}
+  </VStack>;
 }
 
-// 작은 표시
-export const Tag = ({tone = '', children}) => <span className={'tag ' + tone}>{children}</span>;
-export const Check = ({on, label}) => <input type="checkbox" disabled checked={!!on} aria-label={label} />;
+// 작은 표시: 상태는 Astryx 배지, 켜짐/꺼짐은 읽기 전용 체크
+export const Tag = ({tone = '', children}) => <Badge variant={{ok: 'green', mine: 'blue', warn: 'error'}[tone] || 'neutral'} label={children} />;
+export const Check = ({on, label}) => <CheckboxInput label={label} isLabelHidden value={!!on} isReadOnly />;

@@ -2,6 +2,9 @@
 // 글자 편집은 브라우저의 contenteditable 이 하고, React 는 틀만 잡는다 (React 가 글 안을 다시 그리면 커서가 튄다).
 import {useEffect, useImperativeHandle, useRef, useState} from 'react';
 import {Button} from '@astryxdesign/core/Button';
+import {ToggleButton} from '@astryxdesign/core/ToggleButton';
+import {Banner} from '@astryxdesign/core/Banner';
+import {Heading1, Heading2, Bold, Italic, List as ListIc, ListOrdered, Quote, Link2, ImagePlus, Minus} from 'lucide-react';
 import {md, esc, koStamp, toast, INVISIBLE, IMG_SRC, safeUrl} from '../lib/common.js';
 import {useAsk} from '../ui/base.jsx';
 
@@ -89,15 +92,8 @@ async function uploadImage(file) {
   return d.url;
 }
 
-const IC = {
-  h3: <path d="M4 5v14M4 12h10M14 5v14" />, h4: <path d="M4 8v10M4 13h8M12 8v10M16 18h4" />,
-  bold: <path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z" />, italic: <path d="M10 5h8M6 19h8M14 5l-4 14" />,
-  ul: <path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" />, ol: <path d="M10 6h10M10 12h10M10 18h10M4 5l1.5-1v5M4 14h3l-3 4h3" />,
-  quote: <path d="M6 17c-1.5-1-2-2.5-2-5 0-3 1.5-5 4-6M16 17c-1.5-1-2-2.5-2-5 0-3 1.5-5 4-6" />,
-  link: <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />,
-  img: <><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="10" r="1.5" /><path d="M21 16l-5-5-9 9" /></>,
-  hr: <><path d="M4 12h16M8 7h8M8 17h8" opacity=".5" /><path d="M4 12h16" /></>,
-};
+const IC = {h3: Heading1, h4: Heading2, bold: Bold, italic: Italic, ul: ListIc, ol: ListOrdered, quote: Quote, link: Link2, img: ImagePlus, hr: Minus};
+const TOGGLE = new Set(['h3', 'h4', 'bold', 'italic', 'ul', 'ol', 'quote']);     // 켜고 끄는 서식 (나머지는 한 번 넣기)
 const BAR = [['h3', '제목'], ['h4', '소제목'], '|', ['bold', '굵게'], ['italic', '기울임'], '|', ['ul', '목록'], ['ol', '번호 목록'], ['quote', '인용'], '|', ['link', '링크'], ['img', '그림'], ['hr', '구분선']];
 
 export default function RichEditor({ref, value = '', draftKey = '', max = 20000, placeholder = '내용을 쓰십시오'}) {
@@ -198,13 +194,16 @@ export default function RichEditor({ref, value = '', draftKey = '', max = 20000,
 
   const drop = useLoadDraft => { holdDraft.current = false; if (useLoadDraft) load(draft.body); else try { localStorage.removeItem(draftKey); } catch {} setDraft(null); changed(); };
   return <div className="re">
-    {draft && <div className="re-draft"><span>{koStamp(draft.at)}에 저장하지 않고 나간 글이 있습니다.</span>
-      <Button label="그 글 불러오기" size="sm" variant="primary" onClick={() => drop(true)} />
-      <Button label="버리기" size="sm" variant="secondary" onClick={() => drop(false)} /></div>}
+    {draft && <Banner status="info" container="section" title={`${koStamp(draft.at)}에 저장하지 않고 나간 글이 있습니다`}
+      endContent={<><Button label="그 글 불러오기" size="sm" variant="primary" onClick={() => drop(true)} /><Button label="버리기" size="sm" variant="secondary" onClick={() => drop(false)} /></>} />}
     <div className="re-bar" role="toolbar" aria-label="서식" onPointerDown={e => { if (e.target.closest('button')) e.preventDefault(); }}>
-      {BAR.map((b, i) => b === '|' ? <span key={i} className="sep" aria-hidden="true" />
-        : <button key={b[0]} type="button" aria-pressed={!!pressed[b[0]]} onClick={() => run(b[0])}>
-          <svg viewBox="0 0 24 24" aria-hidden="true">{IC[b[0]]}</svg>{b[0] === 'bold' ? <b>굵게</b> : b[0] === 'italic' ? <i>기울임</i> : b[1]}</button>)}
+      {BAR.map((b, i) => {
+        if (b === '|') return <span key={i} className="sep" aria-hidden="true" />;
+        const Ic = IC[b[0]], icon = <Ic size={16} />;
+        return TOGGLE.has(b[0])
+          ? <ToggleButton key={b[0]} label={b[1]} size="sm" icon={icon} isPressed={!!pressed[b[0]]} onPressedChange={() => run(b[0])} />
+          : <Button key={b[0]} label={b[1]} size="sm" variant="ghost" icon={icon} onClick={() => run(b[0])} />;
+      })}
     </div>
     <div ref={el} className="re-body md" contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label="본문" data-ph={placeholder} />
     <div className="re-foot"><span style={{color: count > max ? 'var(--req)' : undefined}}>{count.toLocaleString()} / {max.toLocaleString()}자{count > max ? ' (글자 수를 넘었습니다)' : ''}</span>

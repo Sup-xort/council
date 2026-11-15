@@ -1,9 +1,12 @@
 // 세미나실 예약: 칸을 누르거나 누른 채로 끌어서 여러 시간을 고른다
 import {useEffect, useMemo, useRef, useState} from 'react';
-import {Button} from '@astryxdesign/core/Button';
+import {Card, Heading, Text, HStack, VStack, Button, List, ListItem, EmptyState} from '../ui/ax.js';
 import {api, iso, addDays, koDate, koDay, koRange, toast} from '../lib/common.js';
 import {useAsk, useLoad} from '../ui/base.jsx';
+import {Loading} from './parts.jsx';
 import {days7, HOURS, rangeLabel, whoMsg, Legend, DayHead, WeekNav, RoomPick} from './Lobby.jsx';
+
+const mondayOf = d => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() - (t.getUTCDay() + 6) % 7); return t.toISOString().slice(0, 10); };
 
 export default function Reserve({q}) {
   const ask = useAsk();
@@ -28,14 +31,13 @@ export default function Reserve({q}) {
   const isPast = (d, h) => d < nowD || (d === nowD && h < nowH);
   const free = (d, h) => h >= 0 && h < 24 && !taken[d + '|' + h] && !isPast(d, h);
 
-  // 넘겨받은 시간 칸이 보이게 한 번만 내린다
-  useEffect(() => {
+  useEffect(() => {      // 넘겨받은 시간 칸이 보이게 한 번만 내린다
     if (!w || scrolled.current || !q.get('hour')) return;
     scrolled.current = true;
     gridRef.current?.querySelector(`[data-d="${dsel}"][data-h="${q.get('hour')}"]`)?.scrollIntoView({block: 'center'});
   }, [w]);
 
-  if (!data) return <div className="cols"><div className="skel" style={{height: 700}} /><div className="skel" style={{height: 160}} /></div>;
+  if (!data) return <div className="cols"><Loading rows={[700]} /><Loading rows={[160]} /></div>;
 
   // 내 예약: 같은 방·날의 이어진 시간은 한 줄로
   const mine = [];
@@ -47,7 +49,7 @@ export default function Reserve({q}) {
 
   const reset = () => setSel(new Set());
   const at = e => { const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-h]'); return el && gridRef.current.contains(el) ? {d: el.dataset.d, h: +el.dataset.h} : null; };
-  const extend = h => {                               // 시작 칸부터 h 까지(같은 날), 막힌 칸을 만나면 거기서 멈춘다
+  const extend = h => {      // 시작 칸부터 h 까지(같은 날), 막힌 칸을 만나면 거기서 멈춘다
     const a = anchor.current, step = h >= a ? 1 : -1, s = new Set();
     for (let i = a; i !== h + step && free(dsel, i); i += step) s.add(i);
     setSel(s);
@@ -65,6 +67,10 @@ export default function Reserve({q}) {
   const up = () => { anchor.current = null; };
 
   const hs = [...sel].sort((x, y) => x - y);
+  const cap = w.rules.week_hours, lead = w.rules.cancel_hours, wk = mondayOf(dsel);
+  const used = Object.entries(w.used).filter(([d]) => mondayOf(d) === wk).reduce((n, [, c]) => n + c, 0);
+  const total = used + hs.length, over = cap > 0 && total > cap;
+  const locked = g => lead > 0 && new Date(g.date + 'T00:00') .getTime() + (g.start - lead) * 3600e3 < new Date(w.now).getTime();
   const go = async () => {
     setBusy(true);
     try { await api('reserve', {room_id: rm, date: dsel, hours: hs}); reset(); toast('예약했습니다'); reload(); } catch {} finally { setBusy(false); }
@@ -76,11 +82,11 @@ export default function Reserve({q}) {
   const shift = n => { setWstart(addDays(w.start, n)); reset(); };
 
   return <div className="cols enter">
-    <section className="card tight">
-      <div className="head" style={{padding: '0 8px', margin: '0 0 8px'}}><h1 className="big-title">세미나실 예약</h1></div>
-      <div style={{margin: '0 4px'}}><RoomPick rooms={w.rooms} room={rm} onChange={v => { setRoom(v); reset(); }} /></div>
-      <div className="wkbar"><b>{rangeLabel(days)}</b>
-        <WeekNav onPrev={() => shift(-7)} onToday={() => { setWstart(today); setDay(today); reset(); }} onNext={() => shift(7)} /></div>
+    <Card padding={4}><VStack gap={4}>
+      <Heading level={1}>세미나실 예약</Heading>
+      <RoomPick rooms={w.rooms} room={rm} onChange={v => { setRoom(v); reset(); }} />
+      <HStack hAlign="between" vAlign="center" gap={2}><Text type="large" weight="semibold">{rangeLabel(days)}</Text>
+        <WeekNav onPrev={() => shift(-7)} onToday={() => { setWstart(today); setDay(today); reset(); }} onNext={() => shift(7)} /></HStack>
       <div>
         <DayHead days={days} today={nowD} />
         <div className="tt" ref={gridRef} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
@@ -91,17 +97,19 @@ export default function Reserve({q}) {
           })}</div>)}
         </div>
       </div>
-      <Legend extra={<span>누른 채로 끌면 여러 시간을 한 번에 고릅니다</span>} />
+      <Legend extra="누른 채로 끌면 여러 시간을 한 번에 고릅니다" />
       {hs.length > 0 && <div className="act">
-        <span>{koDate(dsel)} {koRange(hs[0], hs[hs.length - 1] + 1)} ({hs.length}시간)</span>
-        <Button label="예약" variant="secondary" size="lg" onClick={go} isLoading={busy} />
+        <Text weight="semibold" className="act-n"><span className={over ? 'over' : ''}>{total}</span>{cap > 0 ? `/${cap}` : ''}시간</Text>
+        <Button label="예약" variant="primary" size="lg" onClick={go} isLoading={busy} isDisabled={over} />
       </div>}
-    </section>
-    <section className="card"><h3>내 예약</h3>
-      {mine.length ? <div className="list">{mine.map(g => <div key={g.ids[0]}>
-        <span className="grow">{g.room}<br /><span className="muted">{koDay(g.date)}{koDay(g.date) === koDate(g.date) ? '' : ` ${koDate(g.date)}`} {koRange(g.start, g.end)}</span></span>
-        <Button label="취소" variant="destructive" size="md" onClick={() => cancel(g.ids)} />
-      </div>)}</div> : <p className="muted" style={{margin: 0}}>예약한 시간이 없습니다.</p>}
-    </section>
+    </VStack></Card>
+    <Card padding={4}><VStack gap={2}>
+      <Heading level={3}>내 예약</Heading>
+      {mine.length ? <List hasDividers>{mine.map(g => <ListItem key={g.ids[0]} label={g.room}
+        description={`${koDay(g.date)}${koDay(g.date) === koDate(g.date) ? '' : ` ${koDate(g.date)}`} ${koRange(g.start, g.end)}`}
+        endContent={<Button label="취소" variant="destructive" size="sm" onClick={() => cancel(g.ids)} isDisabled={locked(g)} />} />)}</List>
+        : <EmptyState isCompact title="예약한 시간이 없습니다" description="시간표에서 빈 칸을 눌러 예약하십시오." />}
+      {(cap > 0 || lead > 0) && <Text type="supporting" color="secondary">{[cap > 0 && `한 주(월~일)에 ${cap}시간까지 예약할 수 있습니다.`, lead > 0 && `시작 ${lead}시간 전까지만 취소할 수 있습니다.`].filter(Boolean).join(' ')}</Text>}
+    </VStack></Card>
   </div>;
 }

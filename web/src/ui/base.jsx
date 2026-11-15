@@ -2,12 +2,15 @@
 import {createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore} from 'react';
 import {Theme} from '@astryxdesign/core/theme';
 import {InternationalizationProvider} from '@astryxdesign/core/i18n';
+import KO from '@astryxdesign/core/locales/ko-KR.generated.js';
 import {LayerProvider} from '@astryxdesign/core/Layer';
 import {useToast} from '@astryxdesign/core/Toast';
 import {AlertDialog} from '@astryxdesign/core/AlertDialog';
 import {Dialog, DialogHeader} from '@astryxdesign/core/Dialog';
 import {TextInput} from '@astryxdesign/core/TextInput';
 import {Button} from '@astryxdesign/core/Button';
+import {IconButton} from '@astryxdesign/core/IconButton';
+import {Sun, Moon} from 'lucide-react';
 import {HStack} from '@astryxdesign/core/HStack';
 import {VStack} from '@astryxdesign/core/VStack';
 import {neutralTheme} from '@astryxdesign/theme-neutral/built';
@@ -42,13 +45,10 @@ function useMode() {
   };
   return {mode, dark, toggle};
 }
-const MOON = <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />;
-const SUN = <><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" /></>;
 export function ThemeButton() {
   const {dark, toggle} = useContext(ModeCtx);
-  const label = dark ? '밝은 화면으로' : '어두운 화면으로';
-  return <button type="button" className="themebtn" onClick={toggle} aria-label={label} title={label}>
-    <svg viewBox="0 0 24 24" aria-hidden="true">{dark ? SUN : MOON}</svg></button>;
+  return <IconButton label={dark ? '밝은 화면으로' : '어두운 화면으로'} tooltip={dark ? '밝은 화면으로' : '어두운 화면으로'} variant="ghost"
+    icon={dark ? <Sun size={18} /> : <Moon size={18} />} onClick={toggle} />;
 }
 
 // ── 확인 창 · 입력 창 ─────────────────────────────────────────────────
@@ -97,7 +97,7 @@ function ToastBridge() {
 export function Providers({children}) {
   const m = useMode();
   return <ModeCtx.Provider value={m}>
-    <InternationalizationProvider locale="ko-KR">
+    <InternationalizationProvider locale="ko-KR" messages={{'ko-KR': KO}}>
       <Theme theme={neutralTheme} mode={m.mode}>
         <LayerProvider>
           <ToastBridge />

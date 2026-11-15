@@ -42,6 +42,8 @@
     --color-neutral: light-dark(rgba(91, 69, 69, .07), rgba(255, 255, 255, .08));
 
     /* 가능·선택 = 연두, 내 것 = 하늘 */
+    --color-success: light-dark(#6E9B4E, #8FBF6E);
+    --color-text-success: light-dark(#4F7A33, #A9D18A);
     --color-success-muted: light-dark(#CCE3B8, #3E5A33);
     --color-on-success-muted: light-dark(#3A2C2C, #F2ECEA);
     --color-background-green: light-dark(#CCE3B8, #3E5A33);
@@ -81,11 +83,10 @@
   }
 
 
-  .themebtn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 0; border-radius: 50%;
-    background: var(--tint); color: var(--ink); padding: 0; cursor: pointer; flex: none; transition: background .15s, transform .15s; }
-  .themebtn:hover { background: var(--color-overlay-hover, var(--tint)); }
-  .themebtn:active { transform: scale(.94); }
-  .themebtn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  /* 폰의 메뉴 열기 단추와 메뉴 글자를 크게 */
+  [data-testid="mobile-nav-toggle"] { width: 48px; height: 48px; }
+  [data-testid="mobile-nav-toggle"] svg { width: 28px; height: 28px; }
+  .astryx-mobile-nav { font-size: 1.125rem; }
 
   /* 본문 서식 (학생·관리 사이트 같은 모양) */
   .md { font-size: 16px; line-height: 1.75; word-break: keep-all; overflow-wrap: anywhere; }

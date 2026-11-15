@@ -1,47 +1,52 @@
 // 로그인 · 가입 · 계정 찾기 · 새 비밀번호 · QR 스캔 결과
 import {useEffect, useState} from 'react';
-import {Button} from '@astryxdesign/core/Button';
-import {TextInput} from '@astryxdesign/core/TextInput';
+import {Center, VStack, Card, Heading, Text, TextInput, Button, Link, EmptyState, Spinner} from '../ui/ax.js';
+import {CheckCircle2, Undo2, Ban, AlertCircle, MailCheck} from 'lucide-react';
 import {api, toast} from '../lib/common.js';
-import {useMe, goNext, Ic} from './parts.jsx';
+import {useMe, goNext} from './parts.jsx';
 
 function Brand() {
-  return <div className="brand"><a className="mark" href="#/">SWITCH</a><span className="muted">반도체융합공학과 학생회</span></div>;
+  return <VStack gap={1} hAlign="center">
+    <a className="brand-mark" href="#/">SWITCH</a>
+    <Text type="supporting" color="secondary">반도체융합공학과 학생회</Text>
+  </VStack>;
 }
-function Box({title, children, foot}) {
-  return <div className="authbox enter"><Brand />
-    <div className="card">{title && <h2>{title}</h2>}{children}</div>
-    {foot}
-    <p style={{textAlign: 'center', margin: '8px 0 0'}}><a className="home" href="#/">로비로 돌아가기</a></p>
-  </div>;
+function Box({title, desc, children, foot}) {
+  return <Center axis="both" padding={4} className="auth">
+    <VStack gap={5} hAlign="stretch" className="auth-col enter">
+      <Brand />
+      <Card padding={6}><VStack gap={5} hAlign="stretch">
+        <VStack gap={1}><Heading level={2}>{title}</Heading>{desc && <Text type="supporting" color="secondary">{desc}</Text>}</VStack>
+        {children}
+        {foot && <Text type="supporting" color="secondary" justify="center">{foot}</Text>}
+      </VStack></Card>
+      <Center><Link href="#/" color="secondary" type="supporting">로비로 돌아가기</Link></Center>
+    </VStack>
+  </Center>;
 }
-// 입력칸 여럿을 한 번에 다루는 작은 도우미
 function useForm(init) {
   const [v, setV] = useState(init);
   const bind = k => ({value: v[k], onChange: x => setV(o => ({...o, [k]: x}))});
   return [v, bind];
-}
-function Submit({label, busy}) {
-  return <Button className="wide" type="submit" label={label} variant="primary" size="lg" width="100%" isLoading={busy} />;
 }
 function useSubmit(fn) {
   const [busy, setBusy] = useState(false);
   const onSubmit = async e => { e.preventDefault(); if (busy) return; setBusy(true); try { await fn(); } catch {} finally { setBusy(false); } };
   return [busy, onSubmit];
 }
+const Submit = ({label, busy}) => <Button type="submit" label={label} variant="primary" size="lg" width="100%" isLoading={busy} />;
 
 export function Login({q}) {
   const {setMe} = useMe();
   const next = q.get('next') || '#/';
   const [v, bind] = useForm({username: '', password: ''});
   const [busy, onSubmit] = useSubmit(async () => { const d = await api('login', v); setMe(d.user); goNext(next); });
-  return <Box title="로그인">
-    <form className="fl" onSubmit={onSubmit}>
-      <TextInput label="아이디" htmlName="username" autoComplete="username" autoCapitalize="off" isRequired size="lg" {...bind('username')} />
-      <TextInput label="비밀번호" type="password" htmlName="password" autoComplete="current-password" isRequired size="lg" {...bind('password')} />
+  return <Box title="로그인" foot={<>처음 이용하십니까? <Link href={'#/signup?next=' + encodeURIComponent(next)}>회원가입</Link> · <Link href="#/forgot">계정 찾기</Link></>}>
+    <form onSubmit={onSubmit}><VStack gap={4} hAlign="stretch">
+      <TextInput label="아이디" htmlName="username" autoComplete="username" autoCapitalize="off" size="lg" {...bind('username')} />
+      <TextInput label="비밀번호" type="password" htmlName="password" autoComplete="current-password" size="lg" {...bind('password')} />
       <Submit label="로그인" busy={busy} />
-    </form>
-    <p className="muted" style={{textAlign: 'center'}}>처음 이용하십니까? <a href={'#/signup?next=' + encodeURIComponent(next)}>회원가입</a>&nbsp;&nbsp;&nbsp;<a href="#/forgot">계정 찾기</a></p>
+    </VStack></form>
   </Box>;
 }
 
@@ -54,17 +59,16 @@ export function Signup({q}) {
     if (v.password.length < 6) return toast('비밀번호는 6자 이상이어야 합니다');
     const d = await api('signup', v); setMe(d.user); goNext(next);
   });
-  return <Box title="회원가입">
-    <form className="fl" onSubmit={onSubmit}>
-      <TextInput label="아이디 (영문·숫자)" htmlName="username" autoComplete="username" autoCapitalize="off" isRequired size="lg" {...bind('username')} />
-      <TextInput label="이름" htmlName="name" autoComplete="name" isRequired size="lg" {...bind('name')} />
-      <TextInput label="학번" htmlName="student_id" inputMode="numeric" autoComplete="off" isRequired size="lg" {...bind('student_id')} />
-      <TextInput label="이메일" type="email" htmlName="email" autoComplete="email" isRequired size="lg" {...bind('email')} />
+  return <Box title="회원가입" foot={<Link href={'#/login?next=' + encodeURIComponent(next)}>이미 계정이 있습니다</Link>}>
+    <form onSubmit={onSubmit}><VStack gap={4} hAlign="stretch">
+      <TextInput label="아이디" description="영문과 숫자로 3자 이상" htmlName="username" autoComplete="username" autoCapitalize="off" size="lg" {...bind('username')} />
+      <TextInput label="이름" htmlName="name" autoComplete="name" size="lg" {...bind('name')} />
+      <TextInput label="학번" htmlName="student_id" inputMode="numeric" autoComplete="off" size="lg" {...bind('student_id')} />
+      <TextInput label="이메일" type="email" htmlName="email" autoComplete="email" size="lg" {...bind('email')} />
       {/* 비밀번호는 맨 끝 — 중간에 두면 iOS 자동완성이 다음 칸(이름)에도 비밀번호를 채운다 */}
-      <TextInput label="비밀번호 (6자 이상)" type="password" htmlName="password" autoComplete="new-password" isRequired size="lg" {...bind('password')} />
+      <TextInput label="비밀번호" description="6자 이상" type="password" htmlName="password" autoComplete="new-password" size="lg" {...bind('password')} />
       <Submit label="가입하기" busy={busy} />
-    </form>
-    <p className="muted" style={{textAlign: 'center'}}><a href={'#/login?next=' + encodeURIComponent(next)}>이미 계정이 있습니다</a></p>
+    </VStack></form>
   </Box>;
 }
 
@@ -72,34 +76,30 @@ export function Forgot() {
   const [v, bind] = useForm({email: ''});
   const [sent, setSent] = useState(false);
   const [busy, onSubmit] = useSubmit(async () => { await api('forgot', v); setSent(true); });
-  if (sent) return <div className="authbox enter"><Brand /><div className="card result">
-    <div className="big pop"><Ic k="check" /></div>
-    <h2>메일을 보냈습니다</h2><p className="muted">가입한 이메일이면 곧 도착합니다. 안 보이면 스팸함도 확인해 주십시오.</p>
-    <Button className="wide" label="로그인으로" variant="secondary" size="lg" width="100%" href="#/login" /></div></div>;
-  return <Box title="아이디·비밀번호 찾기">
-    <p className="muted">가입할 때 쓴 이메일로 아이디와 비밀번호를 바꿀 수 있는 링크를 보내 드립니다.</p>
-    <form className="fl" onSubmit={onSubmit}>
-      <TextInput label="이메일" type="email" htmlName="email" autoComplete="email" isRequired size="lg" {...bind('email')} />
+  if (sent) return <Center axis="both" padding={4} className="auth"><Card padding={6} className="auth-col enter">
+    <EmptyState icon={<MailCheck className="pop" size={40} />} title="메일을 보냈습니다" description="가입한 이메일이면 곧 도착합니다. 안 보이면 스팸함도 확인해 주십시오."
+      actions={<Button label="로그인으로" variant="secondary" href="#/login" />} /></Card></Center>;
+  return <Box title="아이디·비밀번호 찾기" desc="가입할 때 쓴 이메일로 아이디와 비밀번호를 바꿀 수 있는 링크를 보내 드립니다." foot={<Link href="#/login">로그인으로</Link>}>
+    <form onSubmit={onSubmit}><VStack gap={4} hAlign="stretch">
+      <TextInput label="이메일" type="email" htmlName="email" autoComplete="email" size="lg" {...bind('email')} />
       <Submit label="메일 보내기" busy={busy} />
-    </form>
-    <p className="muted" style={{textAlign: 'center'}}><a href="#/login">로그인으로</a></p>
+    </VStack></form>
   </Box>;
 }
 
 export function Reset({token}) {
   const {setMe} = useMe();
-  // 링크 토큰을 주소창·방문기록에 남기지 않는다 (화면은 그대로 두고 주소만 바꾼다)
-  useEffect(() => { history.replaceState(null, '', '#/reset'); }, []);
+  useEffect(() => { history.replaceState(null, '', '#/reset'); }, []);   // 링크 토큰을 주소창·방문기록에 남기지 않는다
   const [v, bind] = useForm({password: ''});
   const [busy, onSubmit] = useSubmit(async () => {
     if (v.password.length < 6) return toast('비밀번호는 6자 이상이어야 합니다');
     const d = await api('reset', {token, ...v}); setMe(d.user); toast('비밀번호를 바꿨습니다'); location.hash = '#/';
   });
   return <Box title="새 비밀번호">
-    <form className="fl" onSubmit={onSubmit}>
-      <TextInput label="새 비밀번호 (6자 이상)" type="password" htmlName="password" autoComplete="new-password" isRequired size="lg" {...bind('password')} />
+    <form onSubmit={onSubmit}><VStack gap={4} hAlign="stretch">
+      <TextInput label="새 비밀번호" description="6자 이상" type="password" htmlName="password" autoComplete="new-password" size="lg" {...bind('password')} />
       <Submit label="비밀번호 바꾸기" busy={busy} />
-    </form>
+    </VStack></form>
   </Box>;
 }
 
@@ -111,24 +111,23 @@ export function Logout() {
 
 // QR 을 찍으면 들어오는 곳: 대여 · 반납 · 남이 쓰는 중
 const SCAN = {
-  borrowed: ['check', '대여했습니다', '다 쓰고 같은 QR을 한 번 더 찍으면 반납됩니다.', ''],
-  returned: ['back', '반납이 완료됐습니다', '이용해 주셔서 감사합니다.', ''],
-  in_use: ['stop', '다른 사람이 쓰고 있습니다', '반납된 뒤에 다시 찍어 주십시오.', 'mute'],
+  borrowed: [CheckCircle2, '대여했습니다', '다 쓰고 같은 QR을 한 번 더 찍으면 반납됩니다.', 'ok'],
+  returned: [Undo2, '반납이 완료됐습니다', '이용해 주셔서 감사합니다.', 'ok'],
+  in_use: [Ban, '다른 사람이 쓰고 있습니다', '반납된 뒤에 다시 찍어 주십시오.', 'mute'],
 };
 const scanned = new Map();      // 같은 화면이 두 번 그려져도 한 번만 서버에 보낸다
 export function Scan({code}) {
   const [res, setRes] = useState(null);
   useEffect(() => {
-    // 새로고침·탭 복원으로 같은 주소가 다시 열리면 반납돼 버린다 — 주소에서 QR 코드를 지운다
-    history.replaceState(null, '', '#/');
+    history.replaceState(null, '', '#/');      // 새로고침하면 반납돼 버리니 주소에서 QR 코드를 지운다
     if (!scanned.has(code)) scanned.set(code, api('scan', {code}).then(d => ({d}), e => ({err: e.message})));
     scanned.get(code).then(setRes);
   }, [code]);
-  if (!res) return <div className="result"><p className="muted">잠시만 기다려 주십시오…</p></div>;
-  if (res.err) return <div className="result enter"><div className="big mute pop"><Ic k="alert" /></div>
-    <h2 style={{fontSize: 24}}>{res.err}</h2><Button className="wide" label="로비로" variant="primary" size="lg" width="100%" href="#/" /></div>;
-  const v = SCAN[res.d.result];
-  return <div className="result enter"><div className={'big pop ' + v[3]}><Ic k={v[0]} /></div>
-    <h2>{v[1]}</h2><p className="nm">{res.d.item}</p><p className="muted">{v[2]}</p>
-    <Button className="wide" label="대여 화면으로" variant="primary" size="lg" width="100%" href="#/items" /></div>;
+  if (!res) return <Center axis="both" padding={10}><Spinner label="잠시만 기다려 주십시오" /></Center>;
+  const [Ic, title, desc, tone] = res.err ? [AlertCircle, res.err, '', 'mute'] : SCAN[res.d.result];
+  return <Center axis="both" padding={6}><Card padding={8} className="auth-col enter">
+    <EmptyState icon={<span className={'scan-ic pop ' + tone}><Ic size={36} strokeWidth={2} /></span>} title={title}
+      description={[res.d?.item, desc].filter(Boolean).join(' · ')}
+      actions={<Button label={res.err ? '로비로' : '대여 화면으로'} variant="primary" size="lg" href={res.err ? '#/' : '#/items'} />} />
+  </Card></Center>;
 }

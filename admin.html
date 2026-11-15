@@ -1,0 +1,1062 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<!-- 사이트에 어두운 화면이 있다고 브라우저에 알린다. 없으면 삼성 인터넷 등이 제멋대로 색을 뒤집는다 -->
+<meta name="color-scheme" content="light dark">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F6F7F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141211" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex">
+<title>SWITCH 관리</title>
+<style>
+/* 색은 학생 사이트(index.html)와 같다 */
+:root{color-scheme:light dark;
+  --bg:#F6F7F3;--card:#FFFFFF;--fill:#EFF1EC;--ink:#3A2C2C;--sub:#6B6060;
+  --brand:#5B4545;--on-brand:#FFFFFF;
+  --ok:#CCE3B8;--ok-ink:#3A2C2C;--ok-soft:#E6F0DC;
+  --mine:#C4E4F4;--mine-ink:#3A2C2C;
+  --busy:#E5E1E0;--busy-ink:#5B4545;
+  --line:rgba(91,69,69,.12);--tint:rgba(91,69,69,.07);--dot:rgba(91,69,69,.25);
+  --req:#B3261E;--safe-b:env(safe-area-inset-bottom)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --bg:#141211;--card:#1F1B1A;--fill:#2A2524;--ink:#F2ECEA;--sub:#ABA19F;
+  --brand:#EADFDD;--on-brand:#1F1B1A;
+  --ok:#3E5A33;--ok-ink:#F2ECEA;--ok-soft:#2A3823;
+  --mine:#2B5265;--mine-ink:#F2ECEA;
+  --busy:#38322F;--busy-ink:#E0D6D4;
+  --line:rgba(255,255,255,.09);--tint:rgba(255,255,255,.08);--dot:rgba(255,255,255,.3);
+  --req:#F2B8B5}}
+:root[data-theme=dark]{color-scheme:dark;
+  --bg:#141211;--card:#1F1B1A;--fill:#2A2524;--ink:#F2ECEA;--sub:#ABA19F;
+  --brand:#EADFDD;--on-brand:#1F1B1A;
+  --ok:#3E5A33;--ok-ink:#F2ECEA;--ok-soft:#2A3823;
+  --mine:#2B5265;--mine-ink:#F2ECEA;
+  --busy:#38322F;--busy-ink:#E0D6D4;
+  --line:rgba(255,255,255,.09);--tint:rgba(255,255,255,.08);--dot:rgba(255,255,255,.3);
+  --req:#F2B8B5}
+:root[data-theme=light]{color-scheme:light}
+.themebtn{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;min-height:0!important;border:0;border-radius:50%;background:var(--tint);color:var(--ink);padding:0;cursor:pointer;flex:none}
+.themebtn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font:14px/1.45 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",Pretendard,"Noto Sans KR",sans-serif;
+  font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;word-break:keep-all}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+h1{margin:0;font-size:22px;font-weight:700;letter-spacing:-.5px}
+h2{margin:0 0 12px;font-size:16px;font-weight:700}
+.muted{color:var(--sub)}
+
+/* 틀: 넓은 화면은 왼쪽 메뉴, 좁은 화면은 위쪽 머리줄 + 옆으로 미는 탭 */
+.shell{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:2px;padding:20px 14px;background:var(--card);border-right:1px solid var(--line);overflow-y:auto}
+.side .brand{display:flex;flex-direction:column;padding:4px 10px 16px}
+.side .brand b{font-size:18px;color:var(--brand)}.side .brand span{font-size:12px;color:var(--sub)}
+.side nav{display:flex;flex-direction:column;gap:4px}
+.side nav a{display:flex;align-items:center;min-height:40px;padding:0 12px;border-radius:8px;text-decoration:none;color:var(--sub);white-space:nowrap}
+.side nav a:hover{background:var(--tint);color:var(--ink)}
+.side nav a.on{background:var(--ok);color:var(--ok-ink);font-weight:600}
+.side .foot{margin-top:auto;display:flex;flex-direction:column;gap:2px;padding:12px 10px 0;border-top:1px solid var(--line);font-size:13px;color:var(--sub)}
+.side .foot a,.side .foot .themebtn{min-height:32px;display:flex;align-items:center;text-decoration:none}
+.page{min-width:0;padding:28px 32px calc(40px + var(--safe-b))}
+@media (max-width:899px){
+  .shell{display:block}
+  .side{position:sticky;top:0;z-index:5;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;gap:0;padding:env(safe-area-inset-top) 12px 0;border-right:0;border-bottom:1px solid var(--line)}
+  .side .brand{flex-direction:row;gap:8px;padding:0;height:48px;align-items:center}
+  .side .brand span,.side .foot span{display:none}
+  .side .foot{order:2;margin:0 0 0 auto;padding:0;border:0;flex-direction:row;gap:12px}
+  .side .foot a{min-height:44px}
+  .side nav{order:3;flex:1 0 100%;flex-direction:row;overflow-x:auto;scrollbar-width:none;margin:0 -12px;padding:0 4px}
+  .side nav::-webkit-scrollbar{display:none}
+  .side nav a{min-height:44px;border-radius:0;padding:0 12px;position:relative}
+  .side nav a.on{background:none;color:var(--ink)}
+  .side nav a.on::after{content:"";position:absolute;left:12px;right:12px;bottom:0;height:2.5px;border-radius:2px;background:var(--brand)}
+  .page{padding:20px 16px calc(40px + var(--safe-b))}
+}
+.ph{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin-bottom:20px}
+.ph h1{flex:1 1 auto}
+.ph p{flex:1 0 100%;margin:2px 0 0;color:var(--sub);font-size:14px}
+
+/* 버튼·입력: 촘촘하게, 그래도 손가락으로 누를 수 있게 */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 14px;border:0;border-radius:8px;
+  background:var(--brand);color:var(--on-brand);font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn.line{background:var(--tint);color:var(--ink)}
+.btn.red{background:var(--tint);color:var(--req)}
+.btn.xs{height:28px;padding:0 10px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:default}
+.in{height:32px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font-size:13px;min-width:0}
+.in:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 1px var(--brand)}
+select.in{padding-right:4px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 20px}
+.inline{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.toast{position:fixed;left:50%;bottom:calc(24px + var(--safe-b));transform:translateX(-50%);background:var(--brand);color:var(--on-brand);
+  padding:8px 16px;border-radius:99px;font-size:13px;z-index:9;max-width:90vw}
+.tag{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;background:var(--tint);white-space:nowrap}
+.tag.ok{background:var(--ok);color:var(--ok-ink)}.tag.mine{background:var(--mine);color:var(--mine-ink)}.tag.warn{background:var(--tint);color:var(--req);font-weight:600}
+.gone{color:var(--sub)}
+.dt td input[type=checkbox]{width:18px;height:18px;accent-color:var(--brand);vertical-align:middle}.dt td input[type=checkbox][disabled]{opacity:1}
+.dt .in.ce{height:30px;min-width:90px;width:100%;font-size:13px;padding:0 8px}.rc dd .in.ce{width:100%}
+.pay{height:28px;min-width:64px;padding:0 10px;border:1px solid var(--line);border-radius:99px;background:var(--card);color:var(--sub);font-size:12px;cursor:pointer}
+.pay.on{background:var(--ok);border-color:transparent;color:var(--ok-ink);font-weight:600}
+
+/* 표 도구 */
+.dt-tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px}
+.dt-tools .q{flex:1 1 220px}
+.dt-period{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.dt-period .in{width:136px}
+.dt-period .lab{font-size:12px;color:var(--sub);margin-right:2px}
+.dt-count{font-size:12px;color:var(--sub);margin-left:auto;white-space:nowrap}
+.dt tr.gh td{height:40px;max-width:none;background:var(--tint);border-bottom:1px solid var(--line);padding:0 6px;white-space:normal}
+.gbtn{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;width:100%;min-height:40px;padding:4px 8px;border:0;background:none;color:var(--ink);font:inherit;font-weight:600;text-align:left;cursor:pointer}
+.gbtn .muted{font-weight:400;font-size:13px}
+.dt-cards h3.gh{margin:14px 0 6px;font-size:inherit;background:var(--tint);border-radius:8px}
+.rule{padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--bg,transparent)}
+.chip{height:26px;padding:0 10px;border:0;border-radius:99px;background:var(--tint);color:var(--ink);font:inherit;font-size:12px;cursor:pointer}
+.chip:hover{filter:brightness(.96)}.chip:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+.dt-wrap{overflow:auto;max-height:calc(100vh - 190px);background:var(--card);border:1px solid var(--line);border-radius:12px}
+table.dt{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
+.dt th{position:sticky;top:0;z-index:2;background:var(--card);text-align:left;font-weight:600;color:var(--sub);white-space:nowrap;padding:0;border-bottom:1px solid var(--line)}
+.dt th .sort{display:flex;align-items:center;gap:4px;width:100%;height:40px;padding:0 14px;border:0;background:none;color:inherit;font:inherit;cursor:pointer;text-align:left}
+.dt th .sort:hover{color:var(--ink)}.dt th .sort[aria-sort]{color:var(--ink)}
+.dt tr.flt th{top:41px;z-index:1;padding:6px 8px;font-weight:400}
+.dt tr.flt .in{height:28px;width:100%;min-width:72px;font-size:12px;padding:0 6px}
+.dt td{height:42px;padding:0 14px;border-bottom:1px solid var(--line);white-space:nowrap;max-width:340px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.dt td.num,.dt th.num .sort{text-align:right;justify-content:flex-end}
+.dt td.act{overflow:visible}.dt td.act .inline{flex-wrap:nowrap;gap:4px}
+.dt tbody tr:hover td{background:var(--tint)}
+.dt tbody tr:last-child td{border-bottom:0}
+.dt .ck{width:40px;padding:0 0 0 16px}
+.dt-empty{padding:32px 16px;text-align:center;color:var(--sub)}
+.dt-more{display:flex;justify-content:center;padding:10px}
+/* 좁은 화면: 한 행 = 한 카드, 열별 필터는 접어 둔다 */
+.dt-cards{display:flex;flex-direction:column;gap:12px}
+.rc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.rc .t{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;margin-bottom:6px}
+.rc dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 16px;margin:0;font-size:13px}
+.rc dt{color:var(--sub);white-space:nowrap}.rc dd{margin:0;overflow-wrap:anywhere}
+.rc .inline{margin-top:10px}
+.dt-flt{flex:1 0 100%}
+.dt-flt summary{display:inline-flex;align-items:center;min-height:32px;cursor:pointer;color:var(--sub);font-size:13px}
+.dt-flt .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;padding:8px 0}
+.dt-flt label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--sub)}
+
+/* 물품 화면 위쪽 */
+.tops{display:grid;gap:16px;margin-bottom:20px}
+@media (min-width:900px){.tops{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+
+/* 글쓰기 화면: 넓으면 2단(본문 | 설정), 좁으면 위아래 */
+.write{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
+@media (min-width:1100px){.write{grid-template-columns:minmax(0,1fr) 340px}.write>.side-set{position:sticky;top:20px}}
+.side-set{display:flex;flex-direction:column;gap:12px}
+.fld{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--sub)}
+.fld .in,.fld textarea{width:100%;font-size:14px;color:var(--ink)}
+.fld .hint{font-size:12px;color:var(--sub)}
+.title-in{width:100%;border:0;background:none;font-size:24px;font-weight:700;letter-spacing:-.5px;padding:4px 0;outline:none;color:var(--ink)}
+.title-in::placeholder{color:var(--dot)}
+.sub-in{width:100%;border:0;border-bottom:1px solid var(--line);background:none;font-size:15px;padding:6px 0 10px;outline:none;color:var(--ink)}
+.chk{display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer}
+.chk input{width:18px;height:18px;margin:1px 0 0;accent-color:var(--brand);flex:none}
+.seg{display:flex;gap:2px;padding:2px;border-radius:8px;background:var(--tint)}
+.seg button{flex:1;height:30px;border:0;border-radius:6px;background:none;color:var(--sub);font-size:13px;cursor:pointer}
+.seg button.on{background:var(--card);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.1)}
+.rowbox{border:1px solid var(--line);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:6px}
+.qcard{border:1px solid var(--line);border-left:4px solid var(--dot);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:12px;background:var(--card)}
+.qcard:focus-within{border-left-color:var(--brand);box-shadow:0 1px 6px rgba(0,0,0,.08)}
+.qtop{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.qtop .qtitle{flex:1 1 220px;height:40px;padding:0 10px;border:0;border-bottom:1px solid var(--line);border-radius:6px 6px 0 0;background:var(--fill);color:var(--ink);font-size:15px;min-width:0}
+.qtop .qtitle:focus{outline:none;border-bottom:2px solid var(--brand)}
+.qtop select{flex:1 1 170px;max-width:220px;height:40px}
+.qopts{display:flex;flex-direction:column;gap:2px}
+.qopt{display:flex;align-items:center;gap:8px}
+.qopt i{width:16px;height:16px;border:2px solid var(--dot);border-radius:50%;flex:none}.qopt i.multi,.qadd i.multi{border-radius:4px}
+.qn{width:16px;flex:none;text-align:center;font-size:13px;color:var(--sub)}
+.qopt input{flex:1;height:36px;padding:0 4px;border:0;border-bottom:1px solid transparent;background:none;color:var(--ink);font-size:14px;min-width:0}
+.qopt input:hover{border-bottom-color:var(--line)}.qopt input:focus{outline:none;border-bottom:2px solid var(--brand)}
+.qopt button,.qadd{border:0;background:none;color:var(--sub);cursor:pointer;font-size:14px}
+.qopt button{width:32px;height:32px;border-radius:50%;font-size:16px}.qopt button:hover{background:var(--tint)}
+.qadd{display:flex;align-items:center;gap:8px;height:36px;padding:0;text-align:left}.qadd i{width:16px;height:16px;border:2px dotted var(--dot);border-radius:50%;flex:none}.qadd:hover{color:var(--ink)}
+.qprev{color:var(--sub);font-size:13px;border-bottom:1px dotted var(--dot);padding:6px 4px}
+.qbar{display:flex;flex-wrap:wrap;align-items:center;gap:4px;border-top:1px solid var(--line);padding-top:8px}
+.qbar .ib{height:34px;min-width:34px;padding:0 8px;border:0;border-radius:8px;background:none;color:var(--sub);font-size:13px;cursor:pointer}
+.qbar .ib:hover:not(:disabled){background:var(--tint);color:var(--ink)}.qbar .ib:disabled{opacity:.35;cursor:default}.qbar .ib.del:hover:not(:disabled){color:var(--req)}
+.qbar .sp{flex:1}
+.sw{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:0 6px}
+.sw input{appearance:none;width:36px;height:20px;border-radius:10px;background:var(--dot);position:relative;cursor:pointer;margin:0;transition:background .15s}
+.sw input::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--card);transition:transform .15s}
+.sw input:checked{background:var(--brand)}.sw input:checked::after{transform:translateX(16px);background:var(--on-brand)}
+.sw input:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+
+/* 보이는 대로 쓰는 편집기 — 저장은 서식 기호(마크다운)로 하지만 쓰는 사람에겐 보이지 않는다 */
+.re{background:var(--card);border:1px solid var(--line);border-radius:12px}
+.re-bar{position:sticky;top:0;z-index:3;display:flex;flex-wrap:wrap;gap:2px;padding:6px;background:var(--card);border-bottom:1px solid var(--line);border-radius:12px 12px 0 0}
+@media (max-width:899px){.re-bar{top:93px}}
+.re-bar button{height:32px;min-width:36px;padding:0 10px;border:0;border-radius:6px;background:none;color:var(--ink);font-size:13px;cursor:pointer;white-space:nowrap}
+.re-bar button{display:inline-flex;align-items:center;gap:5px}
+.re-bar button svg{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+@media (hover:hover){.re-bar button:hover{background:var(--tint)}}
+.re-bar button:focus{outline:none}.re-bar button:focus-visible{outline:2px solid var(--brand)}
+.re-bar button[aria-pressed=true]{background:var(--ok);color:var(--ok-ink);font-weight:600}
+.re-bar .sep{width:1px;margin:6px 4px;background:var(--line)}
+.re-body{min-height:50vh;padding:20px 24px;outline:none;font-size:16px;line-height:1.75}
+.re-body:empty::before{content:attr(data-ph);color:var(--dot)}
+.re-body img{cursor:default}
+.re-body img.picked{outline:3px solid var(--brand)}
+.re-foot{display:flex;justify-content:space-between;gap:8px;padding:6px 12px;border-top:1px solid var(--line);font-size:12px;color:var(--sub)}
+.re-draft{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 12px;background:var(--mine);color:var(--mine-ink);border-radius:12px 12px 0 0;font-size:13px}
+.re-draft span{flex:1 1 240px}
+@media (max-width:600px){.re-body{padding:14px 12px}}
+
+/* 본문 서식 (학생 사이트와 같은 모양) */
+.md{word-break:keep-all;overflow-wrap:anywhere}
+.md>*:first-child{margin-top:0}.md>*:last-child{margin-bottom:0}
+.md p{margin:0 0 1.4em}
+.md h3{font-size:1.2em;font-weight:700;letter-spacing:-.3px;line-height:1.4;margin:1.8em 0 .6em}
+.md h4{font-size:1.05em;font-weight:700;line-height:1.45;margin:1.6em 0 .5em}.md h5{font-size:1em;font-weight:600;margin:1.4em 0 .4em}
+.md ul,.md ol{margin:0 0 1.4em;padding-left:1.3em}.md li{margin:.35em 0}
+.md blockquote{margin:0 0 1.4em;padding:12px 16px;border-left:3px solid var(--ok);background:var(--fill);border-radius:0 12px 12px 0}.md blockquote p:last-child{margin:0}
+.md code{font:.88em ui-monospace,Menlo,monospace;background:var(--fill);padding:1px 4px;border-radius:5px}
+.md pre{margin:0 0 1.4em;padding:12px 16px;background:var(--fill);border-radius:14px;overflow-x:auto}
+.md hr{border:0;border-top:1px solid var(--line);margin:2em 0}
+.md a{text-decoration:underline;text-underline-offset:3px}
+.md img{display:block;max-width:100%;height:auto;border-radius:12px;margin:0 auto 1.4em}
+.gate{max-width:420px;margin:15vh auto;padding:24px;text-align:center}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side"><div class="brand"><b>SWITCH 관리</b><span>반도체융합공학과 학생회</span></div>
+    <nav id="nav" aria-label="관리 메뉴"></nav>
+    <div class="foot" id="foot"></div></aside>
+  <main class="page" id="app"><p class="muted">불러오는 중…</p></main>
+</div>
+<script src="common.js"></script>
+<script>
+let me = null;
+const isSuper = () => me?.role === 'super';
+const KIND = {dept: '학과 공지', event: '행사 공지'};
+const ROLE = {user: '학생', admin: '관리자', super: '최고 관리자'};
+const TABS = {home: '로비', notices: '공지', events: '행사', reserve: '세미나실 예약', loans: '물품 대여'};
+const toLogin = () => { location.href = './#/login?next=' + encodeURIComponent('admin' + location.hash); };
+api.onAuth = toLogin;
+const narrow = matchMedia('(max-width:759px)');      // 이보다 좁으면 표 대신 카드
+
+// ── 표 도구: 검색 · 열별 필터 · 기간 · 정렬 · 더 보기 ─────────────────
+// columns: {k, label, type:'text'|'num'|'date', val:r=>정렬·필터 값, text:r=>보이는 글자, html:r=>보이는 HTML,
+//           filter:'choice'|'text'|false, period:true(기간 필터를 걸 날짜 열), title:true(카드 제목), act:r=>버튼 HTML}
+// 필터 상태는 주소(#/loans?q=…)에 남는다. 새로고침하거나 주소를 보내도 같은 화면이 나온다.
+// group: r=>묶는 값, groupHead: (값, 그 묶음의 행들)=>머리글 HTML — 있으면 표를 묶음별로 나눠 보이고 머리글을 눌러 접는다.
+// urlState:false 면 필터를 주소에 남기지 않는다(한 화면에 표를 둘 둘 때 뒤의 표에 쓴다).
+function dataTable(host, {path, columns, rows, onAction, onSave, table: tname, select = false, empty = '아직 아무것도 없습니다.', search = '이름, 학번으로 찾기', group, groupHead, urlState = true}) {
+  const cols = columns.map(c => ({filter: c.type === 'date' || c.act ? false : 'text', type: 'text', ...c}));
+  cols.forEach(c => {
+    c.val ||= r => r[c.k];
+    c.text ||= c.type === 'date' ? r => koStamp(c.val(r)) : r => String(c.val(r) ?? '');
+  });
+  const pcol = cols.find(c => c.period);
+  const hay = rows.map(r => cols.filter(c => !c.act).map(c => c.text(r)).join(' ').toLowerCase());
+  const st = {q: '', f: {}, from: '', to: '', s: '', d: 1, limit: 200};
+  const [base, baseQ = ''] = path.split('?');        // path 에 붙은 고정 조건(예: ?event=3)은 그대로 둔다
+  const p0 = new URLSearchParams(urlState ? location.hash.split('?')[1] || '' : '');
+  const closed = new Set();                          // 접어 둔 묶음
+  st.q = p0.get('q') || ''; st.from = p0.get('from') || ''; st.to = p0.get('to') || '';
+  st.s = p0.get('s') || ''; st.d = p0.get('d') === 'asc' ? 1 : p0.get('d') === 'desc' ? -1 : 1;
+  for (const [k, v] of p0) if (k.startsWith('f.')) st.f[k.slice(2)] = v;
+  const picked = new Set();
+  let editing = false; const edits = new Map();     // 수정 중: 줄 번호 → {칸: 새 값}
+  const rawOf = (c, r) => c.raw ? c.raw(r) : r[c.k];
+  const cur = (c, r, i) => { const e = edits.get(i); return e && c.k in e ? e[c.k] : rawOf(c, r); };
+  const editor = (c, r, i) => {
+    const v = cur(c, r, i), a = `data-e="${c.k}" aria-label="${esc(c.label)}"`;
+    if (c.edit === 'select') return `<select class="in ce" ${a}><option value=""></option>${c.options.map(o => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+    if (c.edit === 'multi') return `<div class="multi" ${a} data-e="${c.k}" style="display:flex;flex-wrap:wrap;gap:4px 12px">${c.options.map(o => `<label class="chk" style="align-items:center"><input type="checkbox" data-om="${esc(o)}" ${(v || []).includes(o) ? 'checked' : ''}>${esc(o)}</label>`).join('')}</div>`;
+    if (c.edit === 'check') return `<input type="checkbox" ${a} ${v ? 'checked' : ''}>`;
+    const t = c.edit === 'num' ? 'number" min="1' : c.edit === 'datetime' ? 'datetime-local' : c.edit === 'date' ? 'date' : 'text';
+    return `<input class="in ce" type="${t}" ${a} value="${esc(v ?? '')}">`;
+  };
+  const choices = c => [...new Set(rows.map(r => c.text(r)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+  const saveUrl = () => {
+    if (!urlState) return;
+    const p = new URLSearchParams(baseQ);
+    if (st.q) p.set('q', st.q); if (st.from) p.set('from', st.from); if (st.to) p.set('to', st.to);
+    if (st.s) { p.set('s', st.s); p.set('d', st.d > 0 ? 'asc' : 'desc'); }
+    Object.entries(st.f).forEach(([k, v]) => v && p.set('f.' + k, v));
+    const s = p.toString();
+    history.replaceState(null, '', '#' + base + (s ? '?' + s : ''));
+  };
+  const active = () => st.q || st.from || st.to || Object.values(st.f).some(Boolean);
+  function filtered() {
+    const q = st.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    let idx = rows.map((_, i) => i).filter(i => {
+      const r = rows[i];
+      if (q.length && !q.every(w => hay[i].includes(w))) return false;
+      for (const c of cols) {
+        const v = st.f[c.k]; if (!v) continue;
+        if (c.filter === 'choice' ? c.text(r) !== v : !c.text(r).toLowerCase().includes(v.toLowerCase())) return false;
+      }
+      if (pcol && (st.from || st.to)) {
+        const d = String(pcol.val(rows[i]) || '').slice(0, 10);
+        if (!d || (st.from && d < st.from) || (st.to && d > st.to)) return false;
+      }
+      return true;
+    });
+    const sc = cols.find(c => c.k === st.s);
+    if (sc) idx.sort((a, b) => {
+      const x = sc.val(rows[a]), y = sc.val(rows[b]);
+      if (x == null || x === '') return 1; if (y == null || y === '') return -1;   // 빈 값은 늘 아래
+      return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'ko', {numeric: true})) * st.d;
+    });
+    if (group) idx.sort((a, b) => String(group(rows[a])).localeCompare(String(group(rows[b])), 'ko', {numeric: true}));   // 묶음 순서. 같은 묶음 안은 위의 정렬이 그대로 남는다
+    return idx;
+  }
+  const fctl = c => c.filter === 'choice'
+    ? `<select class="in" data-f="${c.k}" aria-label="${esc(c.label)} 고르기"><option value="">전체</option>${choices(c).map(v => `<option ${st.f[c.k] === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>`
+    : c.filter === 'text' ? `<input class="in" data-f="${c.k}" value="${esc(st.f[c.k] || '')}" placeholder="찾기" aria-label="${esc(c.label)}에서 찾기">` : '';
+  const cell = (c, r, i) => editing && c.edit ? editor(c, r, i) : c.act ? `<div class="inline">${c.act(r)}</div>` : c.html ? c.html(r) : (() => {
+    return esc(c.text(r)); })();
+  const arrow = c => st.s === c.k ? (st.d > 0 ? ' ▲' : ' ▼') : '';
+  function shell() {
+    const card = narrow.matches;
+    host.innerHTML = `<div class="dt-tools">
+        <input class="in q" type="search" value="${esc(st.q)}" placeholder="${esc(search)}" aria-label="찾기">
+        ${pcol ? `<div class="dt-period"><span class="lab">${esc(pcol.label)}</span>
+          <input class="in" type="date" data-p="from" value="${st.from}" aria-label="시작일"><span class="lab">~</span><input class="in" type="date" data-p="to" value="${st.to}" aria-label="끝일">
+          <button class="btn line xs" data-quick="today">오늘</button><button class="btn line xs" data-quick="7">최근 7일</button><button class="btn line xs" data-quick="month">이번 달</button></div>` : ''}
+        <button class="btn line xs" data-clear ${active() ? '' : 'hidden'}>필터 지우기</button>
+        <span class="dt-count" aria-live="polite"></span>
+        ${onSave ? (editing ? '<button class="btn xs" data-ed="save">저장</button><button class="btn line xs" data-ed="cancel">취소</button>' : '<button class="btn line xs" data-ed="on">수정</button>') : ''}
+        ${card ? `<details class="dt-flt" ${Object.values(st.f).some(Boolean) ? 'open' : ''}><summary>항목별 필터와 정렬</summary><div class="grid">
+          ${cols.filter(c => c.filter).map(c => `<label>${esc(c.label)}${fctl(c)}</label>`).join('')}
+          <label>정렬<select class="in" data-sort><option value="">기본</option>${cols.filter(c => !c.act).map(c =>
+            `<option value="${c.k}:1" ${st.s === c.k && st.d > 0 ? 'selected' : ''}>${esc(c.label)} 오름차순</option><option value="${c.k}:-1" ${st.s === c.k && st.d < 0 ? 'selected' : ''}>${esc(c.label)} 내림차순</option>`).join('')}</select></label>
+        </div></details>` : ''}</div>
+      ${card ? '<div class="dt-cards"></div>' : `<div class="dt-wrap"><table class="dt"><thead><tr>
+        ${select ? '<th class="ck"><input type="checkbox" data-all aria-label="보이는 행 모두 고르기"></th>' : ''}
+        ${cols.map(c => `<th class="${c.type === 'num' ? 'num' : ''}">${c.act ? '<span class="sort" style="cursor:default"></span>' : `<button class="sort" data-s="${c.k}" ${st.s === c.k ? `aria-sort="${st.d > 0 ? 'ascending' : 'descending'}"` : ''}>${esc(c.label)}<span aria-hidden="true">${arrow(c)}</span></button>`}</th>`).join('')}</tr>
+        ${cols.some(c => c.filter) ? `<tr class="flt">${select ? '<th></th>' : ''}${cols.map(c => `<th>${fctl(c)}</th>`).join('')}</tr>` : ''}</thead><tbody></tbody></table></div>`}
+      <div class="dt-more" hidden><button class="btn line">200건 더 보기</button></div>`;
+    body();
+  }
+  let shown = [], gk = [];                           // gk: 지금 화면의 묶음 이름들(머리글 단추 번호 → 이름)
+  function body() {
+    const idx = filtered(); shown = idx;
+    const part = idx.slice(0, st.limit);
+    host.querySelector('.dt-count').textContent = `전체 ${rows.length.toLocaleString()}건${active() ? ` 중 ${idx.length.toLocaleString()}건` : ''}`;
+    host.querySelector('[data-clear]').hidden = !active();
+    host.querySelector('.dt-more').hidden = idx.length <= st.limit;
+    // 묶음이 바뀌는 곳마다 머리글을 끼우고, 접힌 묶음의 행은 건너뛴다
+    const members = {}; let last; gk = [];
+    if (group) idx.forEach(i => (members[group(rows[i])] ||= []).push(rows[i]));
+    const lay = (i, head, rowHtml) => {
+      if (!group) return rowHtml(i);
+      const k = group(rows[i]); let h = '';
+      if (k !== last) { last = k; gk.push(k); h = head(`<button type="button" class="gbtn" data-g="${gk.length - 1}" aria-expanded="${!closed.has(k)}"><span aria-hidden="true">${closed.has(k) ? '▸' : '▾'}</span> ${groupHead(k, members[k])}</button>`); }
+      return h + (closed.has(k) ? '' : rowHtml(i));
+    };
+    if (narrow.matches) {
+      const tc = cols.find(c => c.title) || cols[0];
+      host.querySelector('.dt-cards').innerHTML = part.map(i => lay(i, b => `<h3 class="gh">${b}</h3>`, i => {
+        const r = rows[i], ac = cols.find(c => c.act);
+        return `<article class="rc" data-r="${i}"><div class="t">${select ? `<input type="checkbox" data-pick="${i}" ${picked.has(i) ? 'checked' : ''} aria-label="고르기">` : ''}<span>${cell(tc, r, i)}</span></div>
+          <dl>${cols.filter(c => c !== tc && !c.act).map(c => `<dt>${esc(c.label)}</dt><dd>${cell(c, r, i)}</dd>`).join('')}</dl>
+          ${ac ? `<div class="inline">${ac.act(r)}</div>` : ''}</article>`;
+      })).join('') || `<div class="dt-empty box">${active() ? '찾는 조건에 맞는 것이 없습니다.' : empty}</div>`;
+    } else {
+      host.querySelector('tbody').innerHTML = part.map(i => lay(i, b => `<tr class="gh"><td colspan="${cols.length + (select ? 1 : 0)}">${b}</td></tr>`, i => {
+        const r = rows[i];
+        return `<tr data-r="${i}">${select ? `<td class="ck"><input type="checkbox" data-pick="${i}" ${picked.has(i) ? 'checked' : ''} aria-label="고르기"></td>` : ''}
+          ${cols.map(c => `<td class="${c.act ? 'act' : c.type === 'num' ? 'num' : ''}" ${c.act ? '' : `title="${esc(c.text(r))}"`}>${cell(c, r, i)}</td>`).join('')}</tr>`;
+      })).join('') || `<tr><td colspan="${cols.length + (select ? 1 : 0)}" class="dt-empty">${active() ? '찾는 조건에 맞는 것이 없습니다.' : empty}</td></tr>`;
+      const all = host.querySelector('[data-all]');
+      if (all) all.checked = idx.length > 0 && idx.every(i => picked.has(i));
+    }
+  }
+  function setEdit(t, v) {
+    const i = +t.closest('[data-r]').dataset.r, o = edits.get(i) || {};
+    o[t.dataset.e] = v; edits.set(i, o);
+  }
+  async function leaveEdit(save) {
+    if (save) {
+      const changes = [];
+      edits.forEach((o, i) => {
+        const vals = {};
+        cols.forEach(c => { if (c.k in o && String(o[c.k] ?? '') !== String(rawOf(c, rows[i]) ?? '')) vals[c.k] = c.edit === 'num' && o[c.k] !== '' ? +o[c.k] : o[c.k]; });
+        if (Object.keys(vals).length) changes.push({id: rows[i].id, vals});
+      });
+      if (changes.length) { try { await onSave(changes); } catch { return; } return; }   // 저장하면 화면을 새로 그린다
+    }
+    editing = false; edits.clear(); shell();
+  }
+  const changed = () => { st.limit = 200; saveUrl(); body(); };
+  host.oninput = e => {
+    const t = e.target;
+    if (t.dataset.e) { setEdit(t, t.value); }
+    else if (t.classList.contains('q')) { st.q = t.value; changed(); }
+    else if (t.dataset.f != null && t.tagName === 'INPUT') { st.f[t.dataset.f] = t.value; changed(); }
+  };
+  host.onchange = e => {
+    const t = e.target;
+    if (t.dataset.om !== undefined) { const m = t.closest('.multi'); setEdit(m, [...m.querySelectorAll('[data-om]')].filter(x => x.checked).map(x => x.dataset.om)); }
+    else if (t.dataset.e && t.type === 'checkbox') setEdit(t, t.checked);
+    else if (t.dataset.f != null && t.tagName === 'SELECT') { st.f[t.dataset.f] = t.value; changed(); }
+    else if (t.dataset.p) { st[t.dataset.p] = t.value; changed(); }
+    else if (t.dataset.sort != null) { const [k, d] = t.value.split(':'); st.s = k || ''; st.d = +d || 1; changed(); }
+    else if (t.dataset.pick != null) { t.checked ? picked.add(+t.dataset.pick) : picked.delete(+t.dataset.pick); body(); }
+    else if (t.dataset.all != null) { shown.forEach(i => t.checked ? picked.add(i) : picked.delete(i)); body(); }
+  };
+  host.onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.g != null) { const k = gk[+b.dataset.g]; closed.has(k) ? closed.delete(k) : closed.add(k); body(); return; }
+    if (b.dataset.ed) { if (b.dataset.ed === 'on') { editing = true; shell(); } else leaveEdit(b.dataset.ed === 'save'); return; }
+    if (b.dataset.s) { st.d = st.s === b.dataset.s ? -st.d : 1; st.s = b.dataset.s; saveUrl(); shell(); return; }
+    if (b.dataset.quick) {
+      const t = iso(new Date());
+      st.to = t; st.from = b.dataset.quick === 'today' ? t : b.dataset.quick === '7' ? addDays(t, -6) : t.slice(0, 8) + '01';
+      saveUrl(); shell(); return;
+    }
+    if (b.dataset.clear != null) { st.q = st.from = st.to = ''; st.f = {}; saveUrl(); shell(); return; }
+    if (b.closest('.dt-more')) { st.limit += 200; body(); return; }
+    if (b.dataset.act) { const r = rows[+b.closest('[data-r]').dataset.r]; onAction?.(b.dataset.act, r, b); }
+  };
+  narrow.onchange = shell;
+  shell();
+  return {
+    picked: () => [...picked].map(i => rows[i]),
+    // 스프레드시트로 보낼 때 쓸 것: 지금 걸러진 행을 열 이름·종류와 함께. 날짜는 원래 값(YYYY-MM-DDTHH:MM) 그대로 넘긴다.
+    exportRows: () => ({columns: cols.filter(c => !c.act).map(c => ({label: c.label, type: c.type})),
+      rows: filtered().map(i => cols.filter(c => !c.act).map(c => c.type === 'date' ? c.val(rows[i]) ?? '' : c.type === 'num' ? c.val(rows[i]) : c.text(rows[i])))}),
+  };
+}
+let table = null;   // 지금 화면의 표 (나중에 스프레드시트 보내기에서 쓴다)
+
+// ── 보이는 대로 쓰는 편집기 ───────────────────────────────────────────
+// 화면에는 서식이 적용된 글이 보이고, 저장할 때만 서식 기호(마크다운)로 바꾼다. 기존 글과 학생 사이트의 md() 를 그대로 쓴다.
+const MD_SPECIAL = /[\\`*_[\]~]/g;
+function toMd(root) {
+  const inl = node => {
+    let out = '';
+    node.childNodes.forEach(n => {
+      if (n.nodeType === 3) { out += n.nodeValue.replace(INVISIBLE, '').replace(/ /g, ' ').replace(/\s*\n\s*/g, ' ').replace(MD_SPECIAL, '\\$&'); return; }
+      if (n.nodeType !== 1) return;
+      const tag = n.tagName, css = n.style || {};
+      const wrap = (m, inner) => { const t = inner.trim(); if (!t) return inner; const lead = inner.match(/^\s*/)[0], tail = inner.match(/\s*$/)[0]; return `${lead}${m}${t}${m}${tail}`; };
+      if (tag === 'BR') out += '\n';
+      else if (tag === 'IMG') { const s = n.getAttribute('src') || ''; if (IMG_SRC.test(s)) out += `![${(n.getAttribute('alt') || '').replace(/[[\]]/g, '')}](${s})`; }
+      else if (tag === 'A') {
+        const h = n.getAttribute('href') || '', t = inl(n);
+        out += !safeUrl(h) || /[\s)]/.test(h) ? t : t.replace(/\\/g, '') === h ? h : `[${t}](${h})`;
+      }
+      else if (tag === 'CODE') out += '`' + n.textContent.replace(/`/g, '') + '`';
+      else if (tag === 'B' || tag === 'STRONG' || +css.fontWeight >= 600 || css.fontWeight === 'bold') out += wrap('**', inl(n));
+      else if (tag === 'I' || tag === 'EM' || css.fontStyle === 'italic') out += wrap('*', inl(n));
+      else if (tag === 'S' || tag === 'DEL' || tag === 'STRIKE') out += wrap('~~', inl(n));
+      else if (/^(P|DIV|H\d|LI|BLOCKQUOTE)$/.test(tag)) out += (out && !out.endsWith('\n') ? '\n' : '') + inl(n) + '\n';
+      else out += inl(n);
+    });
+    return out;
+  };
+  // 문단 줄 첫머리가 제목·목록·인용·구분선으로 읽히지 않게 기호 앞에 \ 를 붙인다 (* 와 ` 는 위에서 이미)
+  const guard = l => l.replace(/^(\s*)(\d+)([.)])(?=\s)/, '$1$2\\$3').replace(/^(\s*)(#{1,6}(?=\s)|[-+](?=\s)|>|-(?=-{2,}\s*$))/, '$1\\$2');
+  const blocks = [];
+  let buf = null;
+  const flush = () => { if (buf) { const t = inl(buf).replace(/\n+$/, ''); if (t.trim()) blocks.push(t.split('\n').map(l => guard(l.replace(/\s+$/, ''))).join('\n')); } buf = null; };
+  const one = s => s.replace(/\n+/g, ' ').trim();
+  const BLOCKS = 'P,DIV,H1,H2,H3,H4,H5,H6,UL,OL,BLOCKQUOTE,HR,PRE,TABLE,FIGURE';
+  const walk = parent => parent.childNodes.forEach(n => {
+    const tag = n.nodeType === 1 ? n.tagName : '';
+    // 브라우저가 문단 안에 목록·인용을 넣어 버리는 경우(<p><ul>…)가 있다 — 안쪽 블록을 바깥 블록처럼 다룬다
+    if ((tag === 'P' || tag === 'DIV') && n.querySelector(BLOCKS)) { flush(); return walk(n); }
+    if (!/^(P|DIV|H[1-6]|UL|OL|BLOCKQUOTE|HR|PRE|TABLE|FIGURE)$/.test(tag)) {   // 글자·인라인은 한 문단으로 모은다
+      if (n.nodeType === 3 && !n.nodeValue.trim() && !buf) return;
+      (buf ||= document.createElement('p')).append(n.cloneNode(true)); return;
+    }
+    flush();
+    if (/^H[1-3]$/.test(tag)) { const t = one(inl(n)); if (t) blocks.push('# ' + t); }
+    else if (tag === 'H4') { const t = one(inl(n)); if (t) blocks.push('## ' + t); }
+    else if (/^H[56]$/.test(tag)) { const t = one(inl(n)); if (t) blocks.push('### ' + t); }
+    else if (tag === 'HR') blocks.push('---');
+    else if (tag === 'PRE') blocks.push('```\n' + n.textContent.replace(/```/g, '') + '\n```');
+    else if (tag === 'UL' || tag === 'OL') {
+      const items = [];
+      n.querySelectorAll('li').forEach(li => {
+        const c = li.cloneNode(true); c.querySelectorAll('ul,ol').forEach(x => x.remove());
+        const t = one(inl(c)); if (t) items.push((tag === 'OL' ? `${items.length + 1}. ` : '- ') + t);
+      });
+      if (items.length) blocks.push(items.join('\n'));
+    }
+    else if (tag === 'BLOCKQUOTE') { const t = toMd(n); if (t.trim()) blocks.push(t.split('\n').map(l => l ? '> ' + l : '>').join('\n')); }
+    else { buf = n; flush(); }
+  });
+  walk(root);
+  flush();
+  return blocks.join('\n\n');
+}
+const cleanText = s => String(s).replace(/\r/g, '').replace(INVISIBLE, '');
+
+// 그림: 긴 변 1600px 로 줄여 다시 굽는다 (사진 위치 정보도 같이 지워진다). GIF 는 움직임을 지키려고 그대로.
+async function shrinkImage(file) {
+  if (file.type === 'image/gif') return file;
+  const bmp = await createImageBitmap(file, {imageOrientation: 'from-image'});
+  const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+  const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
+  cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+  const png = file.type === 'image/png';
+  return new Promise(res => cv.toBlob(res, png ? 'image/png' : 'image/jpeg', .85));
+}
+async function uploadImage(file) {
+  if (!/^image\//.test(file.type)) throw new Error(toast('그림 파일만 넣을 수 있습니다'));
+  toast('그림을 올리는 중…');
+  const blob = await shrinkImage(file);
+  if (blob.size > 5 * 1024 * 1024) throw new Error(toast('그림은 5MB까지 올릴 수 있습니다'));
+  const r = await fetch('api/admin/upload', {method: 'POST', headers: {'Content-Type': blob.type || 'application/octet-stream'}, body: blob});
+  const d = await r.json().catch(() => ({error: '연결이 원활하지 않습니다. 잠시 뒤 다시 시도해 주십시오'}));
+  if (!r.ok) throw new Error(toast(d.error || '그림을 올리지 못했습니다'));
+  return d.url;
+}
+
+function richEditor(host, {value = '', draftKey = '', max = 20000, placeholder = '내용을 쓰십시오'} = {}) {
+  const IC = {
+    h3: '<path d="M4 5v14M4 12h10M14 5v14"/>', h4: '<path d="M4 8v10M4 13h8M12 8v10M16 18h4"/>',
+    bold: '<path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/>', italic: '<path d="M10 5h8M6 19h8M14 5l-4 14"/>',
+    ul: '<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>', ol: '<path d="M10 6h10M10 12h10M10 18h10M4 5l1.5-1v5M4 14h3l-3 4h3"/>',
+    quote: '<path d="M6 17c-1.5-1-2-2.5-2-5 0-3 1.5-5 4-6M16 17c-1.5-1-2-2.5-2-5 0-3 1.5-5 4-6"/>',
+    link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+    img: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M21 16l-5-5-9 9"/>', hr: '<path d="M4 12h16M8 7h8M8 17h8" opacity=".5"/><path d="M4 12h16"/>'};
+  const B = [['h3', '제목'], ['h4', '소제목'], '|', ['bold', '굵게'], ['italic', '기울임'], '|', ['ul', '목록'], ['ol', '번호 목록'], ['quote', '인용'], '|', ['link', '링크'], ['img', '그림'], ['hr', '구분선']];
+  host.innerHTML = `<div class="re"><div class="re-draft" hidden></div>
+    <div class="re-bar" role="toolbar" aria-label="서식">${B.map(b => b === '|' ? '<span class="sep" aria-hidden="true"></span>'
+      : `<button type="button" data-a="${b[0]}" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true">${IC[b[0]]}</svg>${b[0] === 'bold' ? '<b>굵게</b>' : b[0] === 'italic' ? '<i>기울임</i>' : b[1]}</button>`).join('')}</div>
+    <div class="re-body md" contenteditable="true" role="textbox" aria-multiline="true" aria-label="본문" data-ph="${esc(placeholder)}"></div>
+    <div class="re-foot"><span class="cnt"></span><span>Enter는 새 문단, Shift+Enter는 줄바꿈. 그림은 끌어다 놓아도 들어갑니다</span></div>
+    <input type="file" accept="image/*" hidden></div>`;
+  const el = host.querySelector('.re-body'), bar = host.querySelector('.re-bar'), cnt = host.querySelector('.cnt'), file = host.querySelector('input[type=file]'), dbar = host.querySelector('.re-draft');
+  document.execCommand('defaultParagraphSeparator', false, 'p');
+  const load = v => { el.innerHTML = cleanText(v).trim() ? md(v) : ''; };
+  load(value);
+  let composing = false, pending = null, saved = null, holdDraft = false;
+  // 임시 저장본: 묻지 않고 덮어쓰지 않는다. 띠를 보여 주고 고르게 한다.
+  let draft = null; try { draft = draftKey ? JSON.parse(localStorage.getItem(draftKey) || 'null') : null; } catch {}
+  if (draft?.body && draft.body.trim() !== String(value).trim()) {
+    holdDraft = true; dbar.hidden = false;
+    dbar.innerHTML = `<span>${koStamp(draft.at)}에 저장하지 않고 나간 글이 있습니다.</span><button type="button" class="btn xs" data-d="load">그 글 불러오기</button><button type="button" class="btn line xs" data-d="drop">버리기</button>`;
+    dbar.onclick = e => {
+      const b = e.target.closest('[data-d]'); if (!b) return;
+      if (b.dataset.d === 'load') load(draft.body); else localStorage.removeItem(draftKey);
+      holdDraft = false; dbar.hidden = true; changed();
+    };
+  }
+  const len = () => toMd(el).length;
+  let tmr = 0;
+  function changed() {
+    const n = len();
+    cnt.textContent = `${n.toLocaleString()} / ${max.toLocaleString()}자${n > max ? ' (글자 수를 넘었습니다)' : ''}`;
+    cnt.style.color = n > max ? 'var(--req)' : '';
+    clearTimeout(tmr);
+    if (draftKey && !holdDraft) tmr = setTimeout(() => { try { localStorage.setItem(draftKey, JSON.stringify({body: toMd(el), at: new Date().toISOString().slice(0, 16)})); } catch {} }, 400);
+  }
+  const inBlock = tag => { const s = getSelection(); let n = s.rangeCount ? s.getRangeAt(0).startContainer : null; for (; n && n !== el; n = n.parentNode) if (n.nodeType === 1 && n.tagName === tag) return true; return false; };
+  const refresh = () => {
+    if (!el.contains(getSelection().anchorNode)) return;
+    const q = {bold: () => document.queryCommandState('bold'), italic: () => document.queryCommandState('italic'),
+      ul: () => inBlock('UL'), ol: () => inBlock('OL'), h3: () => inBlock('H3'), h4: () => inBlock('H4'), quote: () => inBlock('BLOCKQUOTE')};
+    bar.querySelectorAll('[data-a]').forEach(b => b.setAttribute('aria-pressed', !!q[b.dataset.a]?.()));
+  };
+  document.addEventListener('selectionchange', refresh);
+  const keep = () => { const s = getSelection(); if (s.rangeCount && el.contains(s.anchorNode)) saved = s.getRangeAt(0).cloneRange(); };
+  const back = () => { el.focus(); if (saved) { const s = getSelection(); s.removeAllRanges(); s.addRange(saved); } };
+  const block = tag => tag === 'BLOCKQUOTE' && inBlock(tag) ? document.execCommand('outdent')
+    : document.execCommand('formatBlock', false, inBlock(tag) ? '<p>' : `<${tag.toLowerCase()}>`);
+  const act = {
+    h3: () => block('H3'), h4: () => block('H4'), quote: () => block('BLOCKQUOTE'),
+    bold: () => document.execCommand('bold'), italic: () => document.execCommand('italic'),
+    ul: () => document.execCommand('insertUnorderedList'), ol: () => document.execCommand('insertOrderedList'),
+    hr: () => { document.execCommand('insertHorizontalRule'); },
+    link: () => {
+      const sel = getSelection().toString().trim();
+      let u = prompt('연결할 인터넷 주소를 입력해 주십시오', /^https?:\/\//.test(sel) ? sel : 'https://');
+      if (u == null) return; u = u.trim(); if (!u || u === 'https://') return;
+      if (!/^(https?:\/\/|mailto:)/i.test(u)) u = 'https://' + u.replace(/^\/+/, '');
+      if (/\s/.test(u)) return toast('주소에 띄어쓰기가 있으면 안 됩니다');
+      back();
+      if (getSelection().isCollapsed) document.execCommand('insertText', false, u);
+      else document.execCommand('createLink', false, u);
+    },
+    img: () => { keep(); file.click(); },
+  };
+  bar.addEventListener('pointerdown', e => { if (e.target.closest('button')) e.preventDefault(); });   // 선택한 글자가 풀리지 않게
+  bar.onclick = e => {
+    const b = e.target.closest('[data-a]'); if (!b) return;
+    const run = () => { el.focus(); act[b.dataset.a](); changed(); refresh(); };
+    if (composing) pending = run; else run();                  // 한글 조합 중이면 조합이 끝난 뒤에
+  };
+  el.addEventListener('compositionstart', () => composing = true);
+  el.addEventListener('compositionend', () => { composing = false; if (pending) { const p = pending; pending = null; setTimeout(p, 0); } });
+  el.addEventListener('input', changed);
+  el.addEventListener('keydown', e => {
+    if (e.isComposing || composing) return;
+    const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+    if (mod && !e.shiftKey && (k === 'b' || k === 'i' || k === 'k')) { e.preventDefault(); act[{b: 'bold', i: 'italic', k: 'link'}[k]](); changed(); }
+  });
+  const insertImg = async f => { try { const url = await uploadImage(f); back(); document.execCommand('insertImage', false, url); changed(); toast('그림을 넣었습니다'); } catch {} };
+  file.onchange = () => { if (file.files[0]) insertImg(file.files[0]); file.value = ''; };
+  // 붙여넣기: 다른 곳의 글꼴·색·표는 버리고 글자만. 보이지 않는 문자도 지운다. 그림 파일이면 올린다.
+  el.addEventListener('paste', e => {
+    e.preventDefault();
+    const img = [...(e.clipboardData?.files || [])].find(f => /^image\//.test(f.type));
+    if (img) { keep(); return insertImg(img); }
+    const t = cleanText(e.clipboardData?.getData('text/plain') || '');
+    if (!t) return;
+    if (!/\n/.test(t)) return document.execCommand('insertText', false, t);
+    const html = t.split(/\n{2,}/).map(p => p.trim()).filter(Boolean).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
+    document.execCommand('insertHTML', false, html);
+  });
+  el.addEventListener('dragover', e => { if ([...e.dataTransfer.items].some(i => i.kind === 'file')) e.preventDefault(); });
+  el.addEventListener('drop', e => {
+    const f = [...e.dataTransfer.files].find(f => /^image\//.test(f.type));
+    if (f) {
+      e.preventDefault();
+      const r = document.caretRangeFromPoint?.(e.clientX, e.clientY);
+      if (r) { const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+      keep(); insertImg(f);
+    } else if (e.dataTransfer.getData('text/html')) {
+      e.preventDefault();
+      const t = cleanText(e.dataTransfer.getData('text/plain'));
+      const r = document.caretRangeFromPoint?.(e.clientX, e.clientY);
+      if (r) { const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+      document.execCommand('insertText', false, t);
+    }
+  });
+  changed();
+  return {
+    get value() { return toMd(el); },
+    get tooLong() { return len() > max; },
+    clearDraft() { clearTimeout(tmr); try { localStorage.removeItem(draftKey); } catch {} },
+    destroy() { document.removeEventListener('selectionchange', refresh); },
+  };
+}
+let editor = null;
+
+// ── 틀 · 라우터 ──────────────────────────────────────────────────────
+const MENU = [['items', '물품'], ['loans', '대여 기록'], ['reservations', '예약 기록'], ['events', '행사'], ['apps', '신청자'], ['notices', '공지'], ['users', '회원'], ['admins', '관리자']];
+function chrome(path) {
+  const cur = path.split('/')[1] || 'items';
+  const sec = {notice: 'notices', event: 'events'}[cur] || cur;
+  $('#nav').innerHTML = MENU.map(([k, t]) => `<a href="#/${k}" class="${sec === k ? 'on' : ''}" ${sec === k ? 'aria-current="page"' : ''}>${t}</a>`).join('');
+  $('#foot').innerHTML = `<span>${esc(me.name)} (${ROLE[me.role]})</span><a href="./">학생 사이트로</a>${themeBtn()}`;
+}
+const routes = [];
+const on = (re, fn) => routes.push({re, fn});
+let seq = 0, chain = Promise.resolve();
+function route() { const my = ++seq; chain = chain.then(() => my === seq ? draw() : null).catch(() => {}); }
+async function draw() {
+  const hash = location.hash.slice(1) || '/items';
+  const path = hash.split('?')[0], q = new URLSearchParams(hash.split('?')[1] || '');
+  if (path === '/' || path === '') return location.replace('#/items');
+  editor?.destroy(); editor = null; table = null;
+  chrome(path);
+  for (const r of routes) {
+    const m = path.match(r.re); if (!m) continue;
+    window.scrollTo(0, 0);
+    try { await r.fn(m, q, path); } catch (e) { console.error(e); }
+    return;
+  }
+  location.replace('#/items');
+}
+addEventListener('hashchange', route);
+const head = (title, desc = '', tools = '') => `<div class="ph"><h1>${title}</h1>${tools}${desc ? `<p>${desc}</p>` : ''}</div>`;
+// 표에서 고친 칸 저장 — 서버가 한 줄이라도 틀렸다고 하면 아무것도 바뀌지 않는다
+const saver = tbl => async changes => {
+  await api('admin/cells', {table: tbl, rows: changes}); toast(`${changes.length}건을 저장했습니다`); route();
+};
+// 시간을 읽기 쉽게: 48 → 2일, 50 → 2일 2시간, 5 → 5시간
+const hText = h => h < 24 ? `${h}시간` : h % 24 ? `${Math.floor(h / 24)}일 ${h % 24}시간` : `${h / 24}일`;
+const lateText = h => `${hText(h)} 지남`;
+const tag = (t, c = '') => `<span class="tag ${c}">${esc(t)}</span>`;
+
+// ── 물품 ──────────────────────────────────────────────────────────────
+on(/^\/items$/, async (m, q, path) => {
+  const d = await api('admin/items');
+  $('#app').innerHTML = head('물품', '번호는 자동으로 붙습니다. 우산 3개를 넣으면 1번~3번이 되고, 우산을 또 넣으면 4번부터 이어집니다.') + `
+    <div class="tops"><form class="box inline" id="add"><b style="margin-right:4px">물품 추가</b>
+        <input class="in" name="kind" placeholder="종류 (예: 우산)" required maxlength="40" style="flex:1 1 140px">
+        <input class="in" name="count" type="number" min="1" max="100" value="1" aria-label="개수" style="width:72px"><span class="muted">개</span>
+        <button class="btn">추가</button></form>
+      <div class="box inline"><b style="margin-right:4px">QR 인쇄</b>
+        <select class="in" id="size" aria-label="QR 크기">${d.qr_sizes.map(s => `<option value="${s}" ${s === 2 ? 'selected' : ''}>한 변 ${s}cm</option>`).join('')}</select>
+        <button class="btn" id="pdf">고른 물품 QR PDF 받기</button>
+        <span class="muted" style="flex:1 0 100%;font-size:13px">표에서 고른 물품만 인쇄합니다. 인쇄는 실제 크기(100%)로 하십시오.</span></div></div>
+    ${d.rules.length ? `<section class="box" id="rules" aria-labelledby="rh" style="margin-bottom:16px"><h2 id="rh" style="font-size:15px;margin:0">종류별 빌릴 수 있는 시간</h2>
+      <p class="muted" style="margin:2px 0 12px;font-size:13px">빌려 간 뒤 이 시간 안에 반납해야 합니다. 정하지 않은 종류는 ${hText(d.default_hours)}입니다. 시간이 지나도 반납하지 않은 물품은 ‘대여 기록’ 맨 위에 따로 모아 보여 드립니다.</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px">
+      ${d.rules.map(r => `<form class="rule" data-kind="${esc(r.kind)}"><b>${esc(r.kind)}</b>
+        <div class="inline" style="margin-top:8px;flex-wrap:nowrap"><input class="in" name="hours" type="number" inputmode="numeric" min="1" max="8760" value="${r.hours}" aria-label="${esc(r.kind)} 빌릴 수 있는 시간" style="width:84px"><span class="muted">시간</span>
+          <span class="muted" data-ko style="flex:1 1 auto;font-size:13px">${hText(r.hours)}</span><button class="btn xs">저장</button></div>
+        <div class="inline" style="margin-top:8px;gap:6px">${[[24, '하루'], [48, '이틀'], [72, '사흘'], [168, '일주일']].map(([h, n]) => `<button type="button" class="chip" data-h="${h}">${n}</button>`).join('')}</div></form>`).join('')}</div></section>` : ''}
+    <div id="t"></div>`;
+  $$('#rules form').forEach(f => {
+    f.hours.oninput = () => { f.querySelector('[data-ko]').textContent = +f.hours.value > 0 ? hText(+f.hours.value) : ''; };
+    f.querySelectorAll('[data-h]').forEach(b => b.onclick = () => { f.hours.value = b.dataset.h; f.hours.oninput(); });
+    f.onsubmit = async e => {
+      e.preventDefault();
+      const r = await api('admin/kind_hours', {kind: f.dataset.kind, hours: f.hours.value});
+      toast(`${josa(f.dataset.kind, '은', '는')} ${hText(r.hours)} 안에 반납하면 됩니다`); route();
+    };
+  });
+  const hours = Object.fromEntries(d.rules.map(r => [r.kind, r.hours]));
+  table = dataTable($('#t'), {path, rows: d.items, select: true, table: 'items', onSave: saver('items'), search: '물품, 코드, 대여자로 찾기', empty: '위에서 물품 종류와 개수를 넣어 추가하십시오.',
+    group: r => r.kind || r.name,
+    groupHead: (k, list) => `<b>${esc(k)}</b> <span class="muted">${list.length}개 · 대여 중 ${list.filter(r => r.who).length}개 · 최대 ${hText(hours[k] ?? d.default_hours)}</span>${list.some(r => r.late_hours) ? ` ${tag(`기한 지남 ${list.filter(r => r.late_hours).length}개`, 'warn')}` : ''}`,
+    columns: [
+      {k: 'kind', label: '종류', filter: 'choice', title: true, edit: 'text', val: r => r.kind || r.name},
+      {k: 'num', label: '번호', type: 'num', filter: false, edit: 'num', text: r => r.num ? `${r.num}번` : ''},
+      {k: 'code', label: 'QR 코드', edit: 'text'},
+      {k: 'state', label: '상태', filter: 'choice', val: r => r.who ? (r.late_hours ? '기한 지남' : '대여 중') : '보관 중', html: r => r.who ? (r.late_hours ? tag('기한 지남', 'warn') : tag('대여 중', 'mine')) : tag('보관 중', 'ok')},
+      {k: 'who', label: '대여자'}, {k: 'student_id', label: '학번'},
+      {k: 'borrowed_at', label: '대여일자', type: 'date', period: true},
+      {k: 'since', label: '빌린 기간', filter: false, val: r => r.borrowed_at ? -toDate(r.borrowed_at) : null, text: r => r.borrowed_at ? koSpan(r.borrowed_at) + '째' : ''},
+      {k: 'due', label: '반납 기한', filter: false, val: r => r.due || '', text: r => r.due ? koStamp(r.due) + '까지' : '', html: r => r.due ? esc(koStamp(r.due)) + '까지' + (r.late_hours ? ' ' + tag(lateText(r.late_hours), 'warn') : '') : ''},
+      {k: '_', label: '', act: r => `${r.who ? '<button class="btn line xs" data-act="ret">반납 처리</button>' : ''}<button class="btn red xs" data-act="del">삭제</button>`},
+    ],
+    onAction: async (a, r) => {
+      if (a === 'ret' && confirm(`${josa(r.name, '을', '를')} 반납 처리하시겠습니까?`)) { await api('admin/item_return', {id: r.id}); toast('반납 처리했습니다'); route(); }
+      if (a === 'del' && confirm(`${josa(r.name, '을', '를')} 삭제하시겠습니까? 붙여 둔 QR은 더 이상 쓸 수 없고, 이 물품의 대여 기록도 함께 삭제됩니다.`)) { await api('admin/item_del', {id: r.id}); toast('삭제했습니다'); route(); }
+    }});
+  $('#add').onsubmit = async e => { e.preventDefault(); await api('admin/item_add', {kind: e.target.kind.value, count: +e.target.count.value}); toast('추가했습니다'); route(); };
+  $('#pdf').onclick = () => {
+    const ids = table.picked().map(r => r.id);
+    if (!ids.length) return toast('인쇄할 물품을 표에서 먼저 고르십시오');
+    location.href = `api/admin/qr.pdf?size=${$('#size').value}&ids=${ids.join(',')}`;
+  };
+});
+
+// ── 대여 기록 (전부) ──────────────────────────────────────────────────
+on(/^\/loans$/, async (m, q, path) => {
+  const [d, us, its] = await Promise.all([api('admin/loans'), api('admin/users'), api('admin/items')]);
+  const whoLabel = u => `${u.name} (${u.student_id})`, itemNames = its.items.map(i => i.name);
+  const open = d.loans.filter(l => !l.in_at).length;
+  const late = d.loans.filter(l => !l.in_at && l.late_hours).sort((a, b) => b.late_hours - a.late_hours);
+  $('#app').innerHTML = head('대여 기록', `${open ? `아직 반납하지 않은 물품이 ${open}개 있습니다.` : '대여 중인 물품이 없습니다. 모두 반납됐습니다.'} 빌릴 수 있는 시간은 ‘물품’ 탭에서 종류별로 정합니다.`) + `
+    <section aria-labelledby="lh" style="margin-bottom:28px"><h2 id="lh" style="font-size:16px;margin:0 0 8px">기한이 지난 대여 ${late.length ? tag(`${late.length}건`, 'warn') : ''}</h2>
+      <div id="late"></div></section>
+    <h2 style="font-size:16px;margin:0 0 8px">전체 기록</h2><div id="t"></div>`;
+  dataTable($('#late'), {path, rows: late, urlState: false, search: '물품, 이름, 학번으로 찾기', empty: '기한이 지난 대여가 없습니다.',
+    onAction: async (a, r) => {
+      if (a === 'ret' && confirm(`${josa(r.item, '을', '를')} 반납 처리하시겠습니까?`)) { await api('admin/item_return', {id: r.item_id}); toast('반납 처리했습니다'); route(); }
+    },
+    columns: [
+      {k: 'item', label: '물품', title: true}, {k: 'kind', label: '종류', filter: 'choice'},
+      {k: 'who', label: '이름'}, {k: 'student_id', label: '학번'}, {k: 'email', label: '이메일'},
+      {k: 'out_at', label: '대여일자', type: 'date'},
+      {k: 'due', label: '반납 기한', filter: false, text: r => koStamp(r.due) + '까지'},
+      {k: 'late_hours', label: '지난 시간', type: 'num', filter: false, val: r => r.late_hours, text: r => lateText(r.late_hours), html: r => tag(lateText(r.late_hours), 'warn')},
+      {k: '_', label: '', act: () => '<button class="btn line xs" data-act="ret">반납 처리</button>'},
+    ]});
+  table = dataTable($('#t'), {path, rows: d.loans, onSave: saver('loans'), search: '물품, 이름, 학번으로 찾기', empty: '아직 대여 기록이 없습니다.',
+    columns: [
+      {k: 'item', label: '물품', title: true, edit: 'select', options: itemNames}, {k: 'kind', label: '종류', filter: 'choice'},
+      {k: 'who', label: '이름', edit: 'select', options: us.users.map(whoLabel), raw: r => `${r.who} (${r.student_id})`}, {k: 'student_id', label: '학번'}, {k: 'email', label: '이메일'},
+      {k: 'out_at', label: '대여일자', type: 'date', period: true, edit: 'datetime'},
+      {k: 'in_at', label: '반납일자', type: 'date', edit: 'datetime', html: r => r.in_at ? esc(koStamp(r.in_at)) : tag(r.late_hours ? '기한 지남' : '반납 안 함', 'warn')},
+      {k: 'span', label: '빌린 기간', filter: false, val: r => (toDate(r.in_at) || new Date()) - toDate(r.out_at), text: r => koSpan(r.out_at, r.in_at) + (r.in_at ? '' : '째')},
+      {k: 'state', label: '상태', filter: 'choice', val: r => r.in_at ? '반납함' : r.late_hours ? '기한 지남' : '반납 안 함'},
+    ]});
+});
+
+// ── 예약 기록 (지금 남아 있는 예약 전부) ─────────────────────────────
+on(/^\/reservations$/, async (m, q, path) => {
+  const [d, us] = await Promise.all([api('admin/reservations'), api('admin/users')]);
+  const today = iso(new Date()), hourOpts = n => Array.from({length: n}, (_, h) => `${h}시`);
+  $('#app').innerHTML = head('예약 기록', '취소된 예약은 남지 않습니다. 수정에서 날짜·시간·방·예약자를 고칠 수 있으며, 다른 예약과 겹치는 시간으로는 바꿀 수 없습니다.') + '<div id="t"></div>';
+  table = dataTable($('#t'), {path, rows: d.reservations, onSave: saver('reservations'), empty: '예약이 없습니다.',
+    columns: [
+      {k: 'date', label: '사용일자', type: 'date', period: true, title: true, edit: 'date', val: r => r.date, text: r => koDate(r.date)},
+      {k: 'start', label: '시작', filter: false, edit: 'select', options: hourOpts(24), raw: r => `${r.start}시`, val: r => r.start, text: r => koTime(r.start)},
+      {k: 'end', label: '끝', filter: false, edit: 'select', options: hourOpts(25).slice(1), raw: r => `${r.end}시`, val: r => r.end, text: r => koTime(r.end)},
+      {k: 'hours', label: '길이', type: 'num', filter: false, val: r => r.end - r.start, text: r => `${r.end - r.start}시간`},
+      {k: 'room', label: '방', filter: 'choice', edit: 'select', options: d.rooms},
+      {k: 'who', label: '이름', edit: 'select', options: us.users.map(u => `${u.name} (${u.student_id})`), raw: r => `${r.who} (${r.student_id})`}, {k: 'student_id', label: '학번'}, {k: 'email', label: '이메일'},
+      {k: 'created_at', label: '예약일자', type: 'date'},
+      {k: 'when', label: '구분', filter: 'choice', val: r => r.date < today ? '지난 예약' : r.date === today ? '오늘' : '앞으로'},
+      {k: '_', label: '', act: r => r.date >= today ? '<button class="btn red xs" data-act="cancel">취소</button>' : ''},
+    ],
+    onAction: async (a, r) => {
+      if (a === 'cancel' && confirm(`${r.who} 님의 ${koDate(r.date)} ${koRange(r.start, r.end)} ${r.room} 예약을 취소하시겠습니까?`)) {
+        await api('unreserve', {ids: r.ids}); toast('취소했습니다'); route();
+      }
+    }});
+});
+
+// ── 행사 ──────────────────────────────────────────────────────────────
+on(/^\/events$/, async (m, q, path) => {
+  const d = await api('admin/events');
+  $('#app').innerHTML = head('행사', '', '<a class="btn" href="#/event/new">+ 새 행사</a>') + '<div id="t"></div>';
+  table = dataTable($('#t'), {path, rows: d.events, onSave: saver('events'), search: '행사 이름으로 찾기', empty: '행사가 없습니다.',
+    columns: [
+      {k: 'title', label: '제목', title: true, edit: 'text'},
+      {k: 'starts_at', label: '행사일자', type: 'date', edit: 'datetime'},
+      {k: 'deadline', label: '신청 마감', type: 'date', period: true, edit: 'datetime'},
+      {k: 'n', label: '신청', type: 'num', filter: false, text: r => `${r.n}명${r.capacity ? ` / ${r.capacity}명` : ''}`},
+      {k: 'capacity', label: '정원', type: 'num', filter: false, edit: 'num', text: r => r.capacity ? `${r.capacity}명` : '제한 없음'},
+      {k: 'state', label: '상태', filter: 'choice', val: r => r.closed ? '마감' : r.capacity && r.n >= r.capacity ? '정원 마감' : '모집 중'},
+      {k: 'dues_only', label: '납부자만 신청', filter: 'choice', edit: 'check', val: r => r.dues_only ? '납부자만' : '모두', text: r => r.dues_only ? '납부자만' : '모두',
+        html: r => `<input type="checkbox" disabled ${r.dues_only ? 'checked' : ''} aria-label="${r.dues_only ? '납부자만' : '모두'}">`},
+      {k: 'on_lobby', label: '로비', filter: 'choice', edit: 'check', val: r => r.on_lobby ? '보임' : '숨김', text: r => r.on_lobby ? '보임' : '숨김',
+        html: r => `<input type="checkbox" disabled ${r.on_lobby ? 'checked' : ''} aria-label="${r.on_lobby ? '보임' : '숨김'}">`},
+      {k: '_', label: '', act: () => '<button class="btn line xs" data-act="apps">신청자</button><button class="btn line xs" data-act="edit">수정</button><button class="btn red xs" data-act="del">삭제</button>'},
+    ],
+    onAction: async (a, r) => {
+      if (a === 'apps') location.hash = `#/apps?event=${r.id}`;
+      if (a === 'edit') location.hash = `#/event/${r.id}`;
+      if (a === 'del' && confirm(`'${r.title}' 행사를 삭제하시겠습니까? 신청 ${r.n}건도 함께 삭제됩니다.`)) { await api('admin/event_del', {id: r.id}); toast('삭제했습니다'); route(); }
+    }});
+});
+
+// ── 신청자 ────────────────────────────────────────────────────────────
+on(/^\/apps$/, async (m, q, path) => {
+  const eid = q.get('event') || '';
+  const d = await api('admin/applications' + (eid ? '?id=' + eid : ''));
+  const ev = d.event, byId = Object.fromEntries(d.events.map(e => [e.id, e]));
+  const all = eid ? (await api('admin/events')).events : d.events;
+  const answer = (f, v) => f.type === 'checkbox' ? (v ? '체크함' : '체크 안 함') : f.type === 'multi' ? (v || []).join(', ') : v ?? '';
+  const allQuestions = [...new Set(d.events.flatMap(e => e.fields.map(f => f.label)))];
+  const cols = [
+    ...(ev ? [] : [{k: 'event', label: '행사', filter: 'choice', title: true, val: r => byId[r.event_id]?.title || ''}]),
+    {k: 'name', label: '이름', title: !!ev}, {k: 'student_id', label: '학번'}, {k: 'email', label: '이메일'},
+    {k: 'dues', label: '학생회비 납부', filter: 'choice', edit: 'check', val: r => r.dues ? '납부' : '미납부',
+      html: r => `<input type="checkbox" disabled ${r.dues ? 'checked' : ''} aria-label="${r.dues ? '납부' : '미납부'}">`},
+    ...(ev ? ev.fields.map((f, i) => ({k: 'f' + i, label: f.label, filter: f.type === 'text' || f.type === 'long' ? 'text' : 'choice', val: r => answer(f, r.answers[i]),
+        edit: f.type === 'checkbox' ? 'check' : f.type === 'select' || f.type === 'dropdown' ? 'select' : f.type === 'multi' ? 'multi' : 'text', options: f.options, raw: r => r.answers[i] ?? (f.type === 'checkbox' ? false : f.type === 'multi' ? [] : '')}))
+      : allQuestions.map((label, n) => {      // 모든 행사: 질문 이름마다 한 열. 그 질문이 없는 행사의 신청은 빈칸
+          const at = r => (byId[r.event_id]?.fields || []).findIndex(f => f.label === label);
+          const types = d.events.flatMap(e => e.fields.filter(f => f.label === label).map(f => f.type));
+          return {k: 'q' + n, label, filter: types.every(t => t === 'text' || t === 'long') ? 'text' : 'choice',
+            val: r => { const i = at(r), f = byId[r.event_id]?.fields[i]; return f ? answer(f, r.answers[i]) : ''; }};
+        })),
+    {k: 'created_at', label: '신청일자', type: 'date', period: true, edit: 'datetime', val: r => r.created_at || r.updated_at},
+    {k: 'updated_at', label: '수정일자', type: 'date', edit: 'datetime', val: r => r.created_at && r.updated_at !== r.created_at ? r.updated_at : ''},
+  ];
+  $('#app').innerHTML = head('신청자', ev ? `${esc(ev.title)} 신청 ${d.applications.length}명` : `모든 행사의 신청 ${d.applications.length}건`,
+    `<select class="in" id="pick" aria-label="행사 고르기" style="max-width:320px"><option value="">모든 행사</option>${all.map(e => `<option value="${e.id}" ${String(e.id) === eid ? 'selected' : ''}>${esc(e.title)}</option>`).join('')}</select>`) + '<div id="t"></div>';
+  $('#pick').onchange = e => { location.hash = '#/apps' + (e.target.value ? '?event=' + e.target.value : ''); };
+  table = dataTable($('#t'), {path: eid ? `/apps?event=${eid}` : path, rows: d.applications, columns: cols, onSave: saver('apps'), empty: '아직 신청한 사람이 없습니다.'});
+});
+
+// ── 공지 ──────────────────────────────────────────────────────────────
+on(/^\/notices$/, async (m, q, path) => {
+  const d = await api('admin/notices');
+  $('#app').innerHTML = head('공지', '', '<a class="btn" href="#/notice/new">+ 글쓰기</a>') + '<div id="t"></div>';
+  table = dataTable($('#t'), {path, rows: d.notices, onSave: async ch => saver('notices')(ch.map(c => c.vals.kind ? {...c, vals: {...c.vals, kind: Object.keys(KIND).find(k => KIND[k] === c.vals.kind)}} : c)), search: '제목, 쓴 사람으로 찾기', empty: '아직 올린 공지가 없습니다.',
+    columns: [
+      {k: 'title', label: '제목', title: true, edit: 'text'}, {k: 'summary', label: '요약', filter: false, edit: 'text'},
+      {k: 'kind', label: '분류', filter: 'choice', edit: 'select', options: Object.values(KIND), raw: r => KIND[r.kind], val: r => KIND[r.kind]},
+      {k: 'created_at', label: '작성일자', type: 'date', period: true, edit: 'datetime', text: r => koDate(r.created_at)},
+      {k: 'author', label: '쓴 사람', filter: 'choice'},
+      {k: 'lobby', label: '로비 맨 위', filter: 'choice', edit: 'check', raw: r => r.on_lobby, val: r => r.on_lobby ? '보임' : '숨김', text: r => r.on_lobby ? '보임' : '숨김',
+        html: r => `<input type="checkbox" disabled ${r.on_lobby ? 'checked' : ''} aria-label="${r.on_lobby ? '보임' : '숨김'}">`},
+      {k: 'ev', label: '연결된 행사', val: r => r.event?.title || ''},
+      {k: '_', label: '', act: () => '<button class="btn line xs" data-act="view">보기</button><button class="btn line xs" data-act="edit">수정</button><button class="btn red xs" data-act="del">삭제</button>'},
+    ],
+    onAction: async (a, r) => {
+      if (a === 'view') window.open(`./#/notice/${r.id}`, '_blank');
+      if (a === 'edit') location.hash = `#/notice/${r.id}`;
+      if (a === 'del' && confirm(`'${r.title}' 공지를 삭제하시겠습니까?`)) { await api('admin/notice_del', {id: r.id}); toast('삭제했습니다'); route(); }
+    }});
+});
+
+// ── 회원 ──────────────────────────────────────────────────────────────
+on(/^\/users$/, async (m, q, path) => {
+  const d = await api('admin/users');
+  const paid = d.users.filter(u => u.dues).length;
+  $('#app').innerHTML = head('회원', `${d.users.length}명 중 ${paid}명이 학생회비를 납부했습니다. 표 위의 수정을 누르면 칸을 바로 고칠 수 있습니다. 관리자 지정은 ‘관리자’ 탭에서 합니다.`) + '<div id="t"></div>';
+  table = dataTable($('#t'), {path, rows: d.users, onSave: saver('users'),
+    columns: [
+      {k: 'name', label: '이름', title: true, edit: 'text'}, {k: 'student_id', label: '학번', edit: 'text'},
+      {k: 'dues', label: '학생회비 납부', filter: 'choice', edit: 'check', val: r => r.dues ? '납부' : '미납부', text: r => r.dues ? '납부' : '미납부',
+        html: r => `<input type="checkbox" disabled ${r.dues ? 'checked' : ''} aria-label="${r.dues ? '납부' : '미납부'}">`},
+      {k: 'username', label: '아이디', edit: 'text'}, {k: 'email', label: '이메일', edit: 'text'},
+      {k: 'role', label: '권한', filter: 'choice', val: r => ROLE[r.role], html: r => r.role === 'user' ? '학생' : tag(ROLE[r.role], 'ok')},
+      {k: 'created_at', label: '가입일자', type: 'date', period: true, edit: 'datetime'},
+    ]});
+});
+
+// ── 관리자 ────────────────────────────────────────────────────────────
+on(/^\/admins$/, async () => {
+  const all = (await api('admin/users')).users;
+  const sup = all.find(u => u.role === 'super'), admins = all.filter(u => u.role === 'admin'), students = all.filter(u => u.role === 'user');
+  const who = u => `<span style="flex:1 1 160px;min-width:0"><b>${esc(u.name)}</b> <span class="muted">${esc(u.student_id)} · ${esc(u.username)}</span></span>`;
+  const rowCss = 'padding:8px 0;border-top:1px solid var(--line);margin-top:8px';
+  const ask = async (msg, body, done) => { if (!confirm(msg)) return; await api('admin/role', body); toast(done); route(); };
+  $('#app').innerHTML = head('관리자', isSuper() ? '관리자를 지정하거나 해제하고, 최고 관리자 자리를 넘길 수 있습니다.' : '관리자 지정은 최고 관리자만 할 수 있습니다.') + `
+    <div style="display:grid;gap:16px;max-width:760px">
+      <div class="box"><b>최고 관리자</b>
+        <div class="inline" style="${rowCss}">${sup ? who(sup) + tag('최고 관리자', 'ok') : '<span class="muted">지금 최고 관리자가 없습니다. 서버에서 python3 council.py super 아이디 를 한 번 실행해 주십시오.</span>'}</div>
+        ${isSuper() ? `<div class="inline" style="${rowCss}"><span class="muted" style="flex:1 0 100%;font-size:13px">자리를 넘기면 본인은 일반 관리자가 되며, 되돌리려면 받은 사람이 다시 넘겨야 합니다.</span>
+          <select class="in" id="to" aria-label="넘길 회원" style="flex:1 1 200px"><option value="">넘길 회원 고르기</option>${all.filter(u => u.role !== 'super').map(u => `<option value="${u.id}">${esc(u.name)} (${esc(u.student_id)})</option>`).join('')}</select>
+          <button class="btn red" id="hand">최고 관리자 넘기기</button></div>` : ''}</div>
+      <div class="box"><b>관리자 <span class="muted">${admins.length}명</span></b>
+        ${admins.map(u => `<div class="inline" style="${rowCss}">${who(u)}${isSuper() ? `<button class="btn red xs" data-off="${u.id}">관리자 해제</button>` : ''}</div>`).join('') || '<p class="muted" style="margin:8px 0 0">아직 관리자가 없습니다.</p>'}</div>
+      ${isSuper() ? `<div class="box"><b>관리자로 지정하기</b>
+        <input class="in" id="find" placeholder="이름, 학번, 아이디로 찾기" aria-label="회원 찾기" style="width:100%;margin-top:8px">
+        <div id="cand"></div></div>` : ''}</div>`;
+  const byId = id => all.find(u => String(u.id) === String(id));
+  $$('[data-off]').forEach(b => b.onclick = () => { const u = byId(b.dataset.off); ask(`${u.name} 님의 관리자 권한을 해제하시겠습니까?`, {id: u.id, role: 'user'}, '해제했습니다'); });
+  if (!isSuper()) return;
+  $('#hand').onclick = async () => {
+    const u = byId($('#to').value); if (!u) return toast('넘길 회원을 골라 주십시오');
+    if (!confirm(`${u.name} 님에게 최고 관리자 자리를 넘기시겠습니까?\n넘기면 본인은 일반 관리자가 됩니다.`)) return;
+    const pw = prompt('본인의 비밀번호를 한 번 더 입력해 주십시오'); if (!pw) return;
+    await api('admin/handover', {id: u.id, password: pw}); toast(`${u.name} 님이 최고 관리자가 되었습니다`); location.reload();
+  };
+  const show = () => {
+    const k = $('#find').value.trim().toLowerCase();
+    const list = students.filter(u => !k || [u.name, u.student_id, u.username].some(v => String(v).toLowerCase().includes(k)));
+    $('#cand').innerHTML = list.slice(0, 20).map(u => `<div class="inline" style="${rowCss}">${who(u)}<button class="btn line xs" data-on="${u.id}">관리자로 지정</button></div>`).join('')
+      + (list.length > 20 ? `<p class="muted" style="margin:8px 0 0">${list.length - 20}명 더 있습니다. 이름이나 학번으로 좁혀 주십시오.</p>` : '')
+      || '<p class="muted" style="margin:8px 0 0">찾는 학생이 없습니다.</p>';
+    $$('[data-on]').forEach(b => b.onclick = () => { const u = byId(b.dataset.on); ask(`${u.name} 님을 관리자로 지정하시겠습니까?`, {id: u.id, role: 'admin'}, '지정했습니다'); });
+  };
+  $('#find').oninput = show; show();
+});
+
+// ── 공지 쓰기 ─────────────────────────────────────────────────────────
+const dtHint = v => v ? koWhen(v) : '';
+on(/^\/notice\/(new|\d+)$/, async m => {
+  const isNew = m[1] === 'new';
+  const [evs, nts, cur] = await Promise.all([api('admin/events'), api('admin/notices'), isNew ? null : api('admin/notice?id=' + m[1])]);
+  const n = cur ? cur.notice : {kind: 'event', title: '', summary: '', body: '', chips: [], event_id: null, on_lobby: false};
+  let kind = n.kind, chips = n.chips.map(c => ({...c}));
+  const others = nts.notices.filter(x => x.id !== n.id);
+  const targetInput = c => c.type === 'tab'
+    ? `<select class="in" data-k="target">${Object.entries(TABS).map(([k, t]) => `<option value="${k}" ${c.target === k ? 'selected' : ''}>${t}</option>`).join('')}</select>`
+    : c.type === 'event' ? `<select class="in" data-k="target">${evs.events.map(e => `<option value="${e.id}" ${c.target == e.id ? 'selected' : ''}>${esc(e.title)}</option>`).join('') || '<option value="">행사가 없습니다</option>'}</select>`
+    : c.type === 'notice' ? `<select class="in" data-k="target">${others.map(x => `<option value="${x.id}" ${c.target == x.id ? 'selected' : ''}>${esc(x.title)}</option>`).join('') || '<option value="">다른 공지가 없습니다</option>'}</select>`
+    : `<input class="in" data-k="target" value="${esc(c.target)}" placeholder="인터넷 주소 (https://…)">`;
+  const chipRows = () => chips.map((c, i) => `<div class="rowbox" data-i="${i}">
+      <div class="inline"><input class="in" data-k="label" value="${esc(c.label)}" placeholder="버튼 글 (예: 세미나실 예약하기)" maxlength="30" style="flex:1">
+        <button type="button" class="btn red xs" data-rm="${i}">지우기</button></div>
+      <div class="inline"><select class="in" data-k="type">${[['tab', '다른 화면으로'], ['event', '행사 신청으로'], ['notice', '다른 공지로'], ['url', '바깥 주소로']].map(([v, t]) => `<option value="${v}" ${c.type === v ? 'selected' : ''}>${t}</option>`).join('')}</select>
+        <div style="flex:1;min-width:0;display:flex">${targetInput(c)}</div></div></div>`).join('');
+  $('#app').innerHTML = `<form id="f">${head(isNew ? '공지 쓰기' : '공지 수정', '', `<a class="btn line" href="#/notices">목록으로</a><button class="btn" id="save">${isNew ? '올리기' : '저장'}</button>`)}
+    <div class="write"><div style="display:flex;flex-direction:column;gap:8px;min-width:0">
+        <input class="title-in" name="title" value="${esc(n.title)}" required maxlength="100" placeholder="제목" aria-label="제목">
+        <input class="sub-in" name="summary" value="${esc(n.summary)}" maxlength="100" placeholder="한 줄 소개 (목록과 로비 배너에 보입니다)" aria-label="한 줄 소개">
+        <div id="ed"></div></div>
+      <div class="side-set">
+        <div class="box" style="display:flex;flex-direction:column;gap:10px"><div class="fld">분류<div class="seg" id="kseg">${Object.entries(KIND).reverse().map(([k, t]) => `<button type="button" data-kind="${k}">${t}</button>`).join('')}</div><span class="hint" id="khint"></span></div>
+          <label class="chk"><input type="checkbox" name="on_lobby" ${n.on_lobby ? 'checked' : ''}><span>로비 맨 위에 보이기<br><span class="muted">로그인하지 않은 사람도 이 글을 읽을 수 있게 됩니다</span></span></label>
+          <label class="fld">신청 현황을 같이 보여 줄 행사<select class="in" name="event_id"><option value="">없음</option>${evs.events.map(e => `<option value="${e.id}" ${n.event_id === e.id ? 'selected' : ''}>${esc(e.title)}</option>`).join('')}</select></label></div>
+        <div class="box" style="display:flex;flex-direction:column;gap:8px"><b>바로가기 버튼</b>
+          <span class="muted" style="font-size:13px">글 아래에 붙는 버튼입니다. 6개까지 달 수 있습니다.</span>
+          <div id="chips" style="display:flex;flex-direction:column;gap:8px"></div>
+          <button type="button" class="btn line" id="addc">+ 버튼 추가</button></div></div></div></form>`;
+  editor = richEditor($('#ed'), {value: n.body, draftKey: 'draft:notice:' + m[1], max: 20000});
+  const hint = () => {
+    $('#khint').textContent = kind === 'event' ? '행사 공지는 로그인하지 않은 사람도 읽을 수 있습니다.' : '학과 공지는 로그인한 사람만 읽을 수 있습니다.';
+    $$('#kseg button').forEach(b => b.classList.toggle('on', b.dataset.kind === kind));
+  };
+  hint();
+  $('#kseg').onclick = ev => { const b = ev.target.closest('[data-kind]'); if (b) { kind = b.dataset.kind; hint(); } };
+  const sync = () => $$('#chips .rowbox').forEach(r => { const c = chips[+r.dataset.i]; r.querySelectorAll('[data-k]').forEach(x => c[x.dataset.k] = x.value); });
+  const first = {tab: 'reserve', event: String(evs.events[0]?.id ?? ''), notice: String(others[0]?.id ?? ''), url: ''};
+  const redraw = () => { $('#chips').innerHTML = chipRows(); $('#addc').disabled = chips.length >= 6; };
+  $('#chips').onchange = ev => { sync(); if (ev.target.dataset.k === 'type') { const c = chips[+ev.target.closest('.rowbox').dataset.i]; c.target = first[c.type]; redraw(); } };
+  $('#chips').onclick = ev => { const b = ev.target.closest('[data-rm]'); if (b) { sync(); chips.splice(+b.dataset.rm, 1); redraw(); } };
+  $('#addc').onclick = () => { sync(); chips.push({label: '', type: 'tab', target: 'reserve'}); redraw(); };
+  redraw();
+  $('#f').onsubmit = async ev => {
+    ev.preventDefault(); sync();
+    if (editor.tooLong) return toast('본문은 2만 자까지 쓸 수 있습니다');
+    const fd = new FormData(ev.target);
+    await api('admin/notice_save', {id: isNew ? undefined : n.id, kind, title: fd.get('title'), summary: fd.get('summary'), body: editor.value,
+      event_id: fd.get('event_id') || null, on_lobby: !!fd.get('on_lobby'), chips});
+    editor.clearDraft(); toast(isNew ? '올렸습니다' : '저장했습니다'); location.hash = '#/notices';
+  };
+});
+
+// ── 행사 쓰기 ─────────────────────────────────────────────────────────
+on(/^\/event\/(new|\d+)$/, async m => {
+  const list = m[1] === 'new' ? null : (await api('admin/events')).events.find(e => e.id === +m[1]);
+  if (m[1] !== 'new' && !list) { toast('없는 행사입니다'); return location.replace('#/events'); }
+  const e = list || {title: '', body: '', starts_at: '', deadline: '', on_lobby: true, fields: [], n: 0};
+  let fields = e.fields.map(f => ({...f, options: [...(f.options || [])]}));
+  const TYPES = [['text', '단답형'], ['long', '장문형'], ['select', '객관식'], ['multi', '체크박스'], ['dropdown', '드롭다운']];
+  const typesFor = f => f.type === 'checkbox' ? [...TYPES, ['checkbox', '체크 한 칸 (예전 방식)']] : TYPES;
+  const hasOpts = f => ['select', 'multi', 'dropdown'].includes(f.type);
+  const prev = {text: '단답형 텍스트', long: '장문형 텍스트', checkbox: '학생이 칸에 체크합니다'};
+  const fieldRows = () => fields.length ? fields.map((f, i) => `<div class="qcard" data-i="${i}">
+      <div class="qtop"><input class="qtitle" data-k="label" value="${esc(f.label)}" maxlength="100" placeholder="질문 (예: 티셔츠 사이즈)" aria-label="질문 ${i + 1}">
+        <select class="in" data-k="type" aria-label="답하는 방식">${typesFor(f).map(([v, t]) => `<option value="${v}" ${f.type === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+      ${hasOpts(f) ? `<div class="qopts">${f.options.map((o, j) => `<div class="qopt">${f.type === 'dropdown' ? `<span class="qn">${j + 1}</span>` : `<i class="${f.type}"></i>`}<input data-o="${j}" value="${esc(o)}" maxlength="100" placeholder="보기 ${j + 1}" aria-label="보기 ${j + 1}"><button type="button" data-orm="${j}" aria-label="보기 ${j + 1} 지우기">✕</button></div>`).join('')}
+        <button type="button" class="qadd" data-oadd>${f.type === 'dropdown' ? '<span class="qn"></span>' : `<i class="${f.type}"></i>`}보기 추가</button></div>` : `<div class="qprev">${prev[f.type]}</div>`}
+      <div class="qbar"><label class="sw"><input type="checkbox" data-k="required" ${f.required ? 'checked' : ''}>필수 질문</label><span class="sp"></span>
+        <button type="button" class="ib" data-up="${i}" ${i ? '' : 'disabled'}>↑ 위로</button>
+        <button type="button" class="ib" data-down="${i}" ${i < fields.length - 1 ? '' : 'disabled'}>↓ 아래로</button>
+        <button type="button" class="ib" data-dup="${i}">복사</button>
+        <button type="button" class="ib del" data-rm="${i}">지우기</button></div></div>`).join('')
+    : '<div class="muted" style="font-size:13px;padding:6px 0">아직 질문이 없습니다. 이름·학번·이메일만 받습니다.</div>';
+  $('#app').innerHTML = `<form id="f">${head(list ? '행사 수정' : '새 행사', '', `<a class="btn line" href="#/events">목록으로</a><button class="btn">저장</button>`)}
+    <div class="write"><div style="display:flex;flex-direction:column;gap:8px;min-width:0">
+        <input class="title-in" name="title" value="${esc(e.title)}" required maxlength="100" placeholder="행사 이름" aria-label="행사 이름">
+        <div id="ed"></div></div>
+      <div class="side-set">
+        <div class="box" style="display:flex;flex-direction:column;gap:10px">
+          <label class="fld">행사 일시 (없으면 비워 두십시오)<input class="in" type="datetime-local" name="starts_at" value="${e.starts_at}"><span class="hint" data-for="starts_at">${dtHint(e.starts_at)}</span></label>
+          <label class="fld">신청 마감<input class="in" type="datetime-local" name="deadline" value="${e.deadline}" required><span class="hint" data-for="deadline">${dtHint(e.deadline)}</span></label>
+          <label class="fld">정원 (비워 두면 제한 없음)<input class="in" type="number" name="capacity" min="1" value="${e.capacity ?? ''}" placeholder="제한 없음"></label>
+          <label class="chk"><input type="checkbox" name="show_count" ${e.show_count === 0 ? '' : 'checked'}><span>신청 인원을 학생에게 보이기<br><span class="muted">끄면 인원 대신 '신청 받는 중'만 보입니다</span></span></label>
+          <label class="chk"><input type="checkbox" name="on_lobby" ${e.on_lobby ? 'checked' : ''}><span>로비에 보이기</span></label>
+          <label class="chk"><input type="checkbox" name="dues_only" ${e.dues_only ? 'checked' : ''}><span>학생회비 납부자만 신청 받기<br><span class="muted">미납부자에게는 신청서 대신 안내 문구가 보입니다. 회원 메뉴에서 납부자를 표시하십시오.</span></span></label></div>
+        <div class="box" style="display:flex;flex-direction:column;gap:10px"><b>신청서에 더 물어볼 것</b>
+          <span class="muted" style="font-size:13px">이름·학번·이메일은 계정에서 자동으로 들어갑니다.</span>
+          ${e.n ? '<span style="font-size:13px;color:var(--req)">이미 신청한 사람이 있습니다. 순서를 바꿔도 받아 둔 답은 그대로 따라가지만, 질문을 지우면 그 질문의 답도 함께 지워집니다.</span>' : ''}
+          <div id="fields" style="display:flex;flex-direction:column;gap:8px">${fieldRows()}</div>
+          <button type="button" class="btn line" id="addf" style="height:38px">+ 질문 추가</button></div></div></div></form>`;
+  editor = richEditor($('#ed'), {value: e.body, draftKey: 'draft:event:' + m[1], max: 5000, placeholder: '행사 설명을 쓰십시오'});
+  $('#f').addEventListener('input', ev => { const h = $(`[data-for="${ev.target.name}"]`); if (h) h.textContent = dtHint(ev.target.value); });
+  const sync = () => $$('#fields .qcard').forEach(r => { const f = fields[+r.dataset.i];
+    r.querySelectorAll('[data-k]').forEach(x => f[x.dataset.k] = x.type === 'checkbox' ? x.checked : x.value);
+    if (hasOpts(f)) f.options = [...r.querySelectorAll('[data-o]')].map(x => x.value); });
+  const redraw = focus => { $('#fields').innerHTML = fieldRows(); if (focus) $(focus)?.focus(); };
+  const card = i => `#fields .qcard[data-i="${i}"]`;
+  $('#fields').onchange = ev => { sync(); if (ev.target.dataset.k === 'type') { const f = fields[+ev.target.closest('.qcard').dataset.i]; if (hasOpts(f) && !f.options.length) f.options = ['']; redraw(); } };
+  $('#fields').onkeydown = ev => { const o = ev.target.dataset.o; if (o === undefined || ev.key !== 'Enter') return; ev.preventDefault();
+    sync(); const i = +ev.target.closest('.qcard').dataset.i; fields[i].options.splice(+o + 1, 0, ''); redraw(`${card(i)} [data-o="${+o + 1}"]`); };
+  $('#fields').onclick = ev => { const t = ev.target.closest('button'); if (!t) return; sync(); const d = t.dataset;
+    if (d.rm !== undefined) { fields.splice(+d.rm, 1); redraw(); }
+    else if (d.dup !== undefined) { const f = fields[+d.dup]; fields.splice(+d.dup + 1, 0, {...f, id: undefined, options: [...f.options]});      // 복제본은 새 질문이라 번호를 따로 받는다
+       redraw(`${card(+d.dup + 1)} [data-k="label"]`); }
+    else if (d.up !== undefined) { const i = +d.up; [fields[i - 1], fields[i]] = [fields[i], fields[i - 1]]; redraw(`${card(i - 1)} [data-up]`); }
+    else if (d.down !== undefined) { const i = +d.down; [fields[i + 1], fields[i]] = [fields[i], fields[i + 1]]; redraw(`${card(i + 1)} [data-down]`); }
+    else if (d.oadd !== undefined) { const i = +t.closest('.qcard').dataset.i; fields[i].options.push(''); redraw(`${card(i)} [data-o="${fields[i].options.length - 1}"]`); }
+    else if (d.orm !== undefined) { const i = +t.closest('.qcard').dataset.i; fields[i].options.splice(+d.orm, 1); redraw(); } };
+  $('#addf').onclick = () => { sync(); fields.push({label: '', type: 'text', required: false, options: []}); redraw(`${card(fields.length - 1)} [data-k="label"]`); $(card(fields.length - 1))?.scrollIntoView({block: 'center', behavior: 'smooth'}); };
+  $('#f').onsubmit = async ev => {
+    ev.preventDefault(); sync();
+    if (editor.tooLong) return toast('설명은 5천 자까지 쓸 수 있습니다');
+    const bad = fields.findIndex(f => !f.label.trim() || (hasOpts(f) && !f.options.some(o => o.trim())));
+    if (bad >= 0) { $(card(bad))?.scrollIntoView({block: 'center'}); return toast(!fields[bad].label.trim() ? `${bad + 1}번 질문의 내용을 적어 주십시오` : `${bad + 1}번 질문의 보기를 적어 주십시오`); }
+    const fd = new FormData(ev.target);
+    await api('admin/event_save', {id: list?.id, title: fd.get('title'), body: editor.value, starts_at: fd.get('starts_at'),
+      deadline: fd.get('deadline'), on_lobby: !!fd.get('on_lobby'), capacity: fd.get('capacity') || null, show_count: !!fd.get('show_count'), dues_only: !!fd.get('dues_only'),
+      fields: fields.map(f => ({...f, options: hasOpts(f) ? f.options.map(o => o.trim()).filter(Boolean) : []}))});
+    editor.clearDraft(); toast('저장했습니다'); location.hash = '#/events';
+  };
+});
+
+// ── 시작 ──────────────────────────────────────────────────────────────
+api('me').then(d => {
+  me = d.user;
+  if (!me) return toLogin();
+  if (me.role !== 'admin' && me.role !== 'super') {
+    const sh = document.querySelector('.shell'); sh.style.display = 'block';
+    sh.innerHTML = `<div class="gate box"><h1 style="margin-bottom:8px">관리자만 쓸 수 있습니다</h1>
+      <p class="muted">${esc(me.name)} 님의 계정은 관리자 권한이 없습니다.</p><a class="btn" href="./">학생 사이트로</a></div>`;
+    return;
+  }
+  route();
+});
+</script>
+</body>
+</html>

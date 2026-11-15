@@ -3,3 +3,4 @@ data/
 *.bak-*
 council.env
 .claude/
+web/node_modules/

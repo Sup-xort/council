@@ -10,6 +10,7 @@ from http.server import ThreadingHTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
+os.environ["COUNCIL_SIGNUP"] = "open"
 os.environ["COUNCIL_DB"] = os.path.join(tempfile.mkdtemp(), "t.db")
 import council  # noqa: E402
 
@@ -39,15 +40,20 @@ class Client:
 
 def signup(name, sid):
     c = Client()
-    st, d = c.call("/api/signup", {"username": name, "password": "secret1", "name": name, "student_id": sid, "email": f"{name}@x.kr"})
+    st, d = c.call("/api/signup", {"username": name, "password": "secret1", "name": name, "student_id": sid, "email": f"{name}@skku.edu", "phone": "010-1234-5678", "consent": True})
     assert st == 200, d
     return c
 
 
-a, b = signup("alice", "2024001"), signup("bob", "2024002")
-assert a.call("/api/signup", {"username": "alice", "password": "secret1", "name": "a", "student_id": "1", "email": "a@x.kr"})[0] == 409
+a, b = signup("alice", "2024000001"), signup("bob", "2024000002")
+assert a.call("/api/signup", {"username": "alice", "password": "secret1", "name": "a", "student_id": "2024000099", "email": "a@skku.edu", "phone": "01012345678", "consent": True})[0] == 409
 assert Client().call("/api/login", {"username": "alice", "password": "nope"})[0] == 401
-assert Client().call("/api/signup", {"username": "dave", "password": "Pw1234!", "name": "Pw1234!", "student_id": "1", "email": "d@x.kr"})[0] == 400
+assert Client().call("/api/signup", {"username": "dave", "password": "Pw1234!", "name": "Pw1234!", "student_id": "2024000099", "email": "d@skku.edu", "phone": "01012345678", "consent": True})[0] == 400
+assert Client().call("/api/signup", {"username": "frank", "password": "secret1", "name": "f", "student_id": "2024000099", "email": "f@skku.edu", "phone": "01012345678"})[0] == 400   # 동의 없음
+assert Client().call("/api/signup", {"username": "frank", "password": "secret1", "name": "f", "student_id": "2024000099", "email": "f@skku.edu", "phone": "12", "consent": True})[0] == 400   # 전화번호 틀림
+assert Client().call("/api/signup", {"username": "frank", "password": "secret1", "name": "f", "student_id": "123", "email": "f@skku.edu", "phone": "01012345678", "consent": True})[0] == 400   # 학번 10자리
+assert Client().call("/api/signup", {"username": "frank", "password": "secret1", "name": "f", "student_id": "2024000099", "email": "f@gmail.com", "phone": "01012345678", "consent": True})[0] == 400   # 학교 메일만
+assert Client().call("/api/signup", {"username": "frank", "password": "secret1", "name": "f", "student_id": "2024000099", "email": "f@g.skku.edu", "phone": "01012345678", "consent": True})[0] == 200
 assert Client().call("/api/scan", {"code": "abcd"})[0] == 401
 assert a.call("/api/me")[1]["user"]["name"] == "alice"
 
@@ -72,7 +78,7 @@ for _ in range(30):
     b.call("/api/scan", {"code": item["code"]}); b.call("/api/scan", {"code": item["code"]})
 assert b.call("/api/admin/loans")[0] == 403
 loans = a.call("/api/admin/loans")[1]["loans"]
-assert len(loans) == 31 and loans[0]["who"] == "bob" and loans[0]["student_id"] == "2024002" and loans[0]["kind"] == "우산"
+assert len(loans) == 31 and loans[0]["who"] == "bob" and loans[0]["student_id"] == "2024000002" and loans[0]["kind"] == "우산"
 
 # 관리 사이트 파일
 for path in ("/admin", "/"):
@@ -100,7 +106,7 @@ w = b.call(f"/api/week?start={tomorrow}")[1]
 assert {r["who"] for r in w["reservations"]} == {"b*b", "a***e"}, w["reservations"]
 rid = b.call("/api/my_reservations")[1]["reservations"][0]["id"]
 nb = Client()
-nb.cookie = signup("carol", "2024003").cookie
+nb.cookie = signup("carol", "2024000003").cookie
 nb.call("/api/unreserve", {"id": rid})
 assert len(b.call("/api/my_reservations")[1]["reservations"]) == 2
 
@@ -114,7 +120,7 @@ assert b.call("/api/admin/reservations")[0] == 403
 rs = a.call("/api/admin/reservations")[1]["reservations"]
 bob_r = [r for r in rs if r["who"] == "bob"]
 assert len(bob_r) == 1 and (bob_r[0]["start"], bob_r[0]["end"]) == (10, 12) and len(bob_r[0]["ids"]) == 2, rs
-assert bob_r[0]["created_at"] and bob_r[0]["student_id"] == "2024002"
+assert bob_r[0]["created_at"] and bob_r[0]["student_id"] == "2024000002"
 assert b.call("/api/unreserve", {"ids": "x"})[0] == 400
 assert a.call("/api/unreserve", {"ids": bob_r[0]["ids"]})[0] == 200
 assert b.call("/api/my_reservations")[1]["reservations"] == []
@@ -156,6 +162,9 @@ assert b.call("/api/apply", {"event_id": eid, "answers": {"0": "XL"}})[0] == 400
 assert b.call("/api/apply", {"event_id": eid, "answers": {"0": "S", "1": True}})[0] == 200
 assert b.call("/api/apply", {"event_id": eid, "answers": {"0": "M"}})[0] == 200
 assert b.call(f"/api/event?id={eid}")[1]["application"]["answers"] == {"0": "M", "1": False}
+assert b.call("/api/apply_cancel", {"event_id": eid})[0] == 200 and b.call(f"/api/event?id={eid}")[1]["application"] is None
+assert b.call("/api/apply_cancel", {"event_id": eid})[0] == 404
+assert b.call("/api/apply", {"event_id": eid, "answers": {"0": "M"}})[0] == 200
 mf = [{"label": "메뉴", "type": "multi", "options": ["A", "B", "C"], "required": True}]
 assert a.call("/api/admin/event_save", {"title": "복수 선택", "deadline": future, "on_lobby": False, "fields": mf})[0] == 200
 mid = next(e["id"] for e in a.call("/api/admin/events")[1]["events"] if e["title"] == "복수 선택")
@@ -256,14 +265,14 @@ for bad in ("/img/../council.db", "/img/zzzz.png", "/img/0123456789abcdef.png"):
         assert e.code == 404, bad
 
 # 학생회비: 관리자가 표시하고, '납부자만' 행사는 낸 학생만 새로 신청한다
-st, d = Client().call("/api/signup", {"username": "erin", "password": "secret1", "name": "", "student_id": "1", "email": "e@x.kr"})
+st, d = Client().call("/api/signup", {"username": "erin", "password": "secret1", "name": "", "student_id": "2024000099", "email": "e@skku.edu", "phone": "01012345678", "consent": True})
 assert st == 400 and d["error"] == "이름을 입력해 주십시오", d                      # 키 이름(name) 대신 우리말, 조사도 맞게
 assert council.josa("학번", "을", "를") == "학번을" and council.josa("아이디", "을", "를") == "아이디를"
 dues_ev = {"title": "납부자 행사", "deadline": future, "on_lobby": True, "fields": [], "dues_only": True}
 assert a.call("/api/admin/event_save", dues_ev)[0] == 200
 de = [e for e in a.call("/api/admin/events")[1]["events"] if e["title"] == "납부자 행사"][0]
 assert de["dues_only"] is True
-erin = signup("erin", "2024009")
+erin = signup("erin", "2024000009")
 st, d = erin.call("/api/apply", {"event_id": de["id"], "answers": {}})
 assert st == 403 and "학생회비" in d["error"]
 assert erin.call("/api/me")[1]["user"]["dues"] is False
@@ -314,13 +323,13 @@ assert b.call("/api/admin/handover", {"id": uid["alice"], "password": "secret1"}
 assert a.call("/api/me")[1]["user"]["role"] == "super"
 
 # 아이디·비밀번호 찾기: 메일은 가로채서 본다
-assert Client().call("/api/forgot", {"email": "bob@x.kr"})[0] == 503        # SMTP 미설정
+assert Client().call("/api/forgot", {"email": "bob@skku.edu"})[0] == 503        # SMTP 미설정
 os.environ["SMTP_HOST"] = "test"
 sent = []
 council.mail_later = lambda to, subj, body: sent.append((to, body))
-assert Client().call("/api/forgot", {"email": "nobody@x.kr"}) == (200, {"ok": True}) and not sent
-assert Client().call("/api/forgot", {"email": "BOB@x.kr"})[0] == 200 and sent[0][0] == "bob@x.kr" and "bob" in sent[0][1]
-Client().call("/api/forgot", {"email": "bob@x.kr"})
+assert Client().call("/api/forgot", {"email": "nobody@skku.edu"}) == (200, {"ok": True}) and not sent
+assert Client().call("/api/forgot", {"email": "BOB@skku.edu"})[0] == 200 and sent[0][0] == "bob@skku.edu" and "bob" in sent[0][1]
+Client().call("/api/forgot", {"email": "bob@skku.edu"})
 assert len(sent) == 1                                                          # 2분 안 재요청은 무시
 tok = sent[0][1].split("#/reset/")[1].split()[0]
 assert Client().call("/api/reset", {"token": "x", "password": "newpass1"})[0] == 400
@@ -430,9 +439,9 @@ b.call("/api/reserve", {"date": dd, "room_id": 1, "hours": [9]})
 assert cells("reservations", blk["id"], room="세미나실 1", start="9시")[0] == 409          # 다른 사람 예약과 겹침
 assert cells("reservations", blk["id"], date="2026-13-45")[0] == 400
 # 회원·행사·공지·신청
-assert cells("users", users["bob"]["id"], username="alice")[0] == 409 and cells("users", users["bob"]["id"], username="a!")[0] == 400
-assert cells("users", users["bob"]["id"], username="bob2", created_at="2026-03-01T10:00")[0] == 200
-assert [u for u in a.call("/api/admin/users")[1]["users"] if u["id"] == users["bob"]["id"]][0]["username"] == "bob2"
+assert cells("users", users["carol"]["id"], username="alice")[0] == 409 and cells("users", users["carol"]["id"], username="a!")[0] == 400
+assert cells("users", users["carol"]["id"], username="carol2", created_at="2026-03-01T10:00")[0] == 200
+assert [u for u in a.call("/api/admin/users")[1]["users"] if u["id"] == users["carol"]["id"]][0]["username"] == "carol2"
 ev0 = a.call("/api/admin/events")[1]["events"][0]
 assert cells("events", ev0["id"], on_lobby=False, dues_only=True)[0] == 200
 e1 = [e for e in a.call("/api/admin/events")[1]["events"] if e["id"] == ev0["id"]][0]
@@ -493,3 +502,147 @@ a.call("/api/admin/event_save", {"id": ev2["id"], "title": "복제 시험", "dea
 got = [e for e in a.call("/api/admin/events")[1]["events"] if e["id"] == ev2["id"]][0]["fields"]
 assert [f["label"] for f in got] == ["하나", "둘"] and got[0]["id"] == q0["id"] and got[1]["id"] != q0["id"]
 print("복제 OK")
+
+# 계정 탈취 막기: 이메일 같은 칸은 최고 관리자만, 관리자 계정은 아무도 못 고친다
+assert a.call("/api/me")[1]["user"]["role"] == "super" and b.call("/api/me")[1]["user"]["role"] == "admin"
+users = {u["username"]: u for u in a.call("/api/admin/users")[1]["users"]}
+def bcells(table, id, **vals):
+    return b.call("/api/admin/cells", {"table": table, "rows": [{"id": id, "vals": vals}]})
+assert bcells("users", users["carol2"]["id"], email="evil@g.skku.edu")[0] == 403           # 일반 관리자는 회원 이메일을 못 바꿈
+assert bcells("users", users["alice"]["id"], email="evil@g.skku.edu")[0] == 403            # 최고 관리자 이메일은 더더욱
+assert cells("users", users["bob"]["id"], email="evil@g.skku.edu")[0] == 403              # 최고 관리자도 관리자 계정은 못 고침
+assert cells("users", users["carol2"]["id"], email="carol@g.skku.edu")[0] == 200
+assert bcells("users", users["carol2"]["id"], dues=True, phone="010-0000-0000")[0] == 200  # 회비·전화번호는 관리자도
+assert [u["email"] for u in a.call("/api/admin/users")[1]["users"] if u["username"] == "alice"] == ["alice@skku.edu"]
+print("계정 탈취 막기 OK")
+
+# 비밀번호: 영문자·숫자 필수, 600000회, 예전 해시는 로그인 때 새 횟수로
+def mail_code(email):
+    n = len(sent)
+    st, d = Client().call("/api/signup_code", {"email": email})
+    return st, (sent[-1][1].split("인증 코드는 ")[1][:6] if len(sent) > n else None)
+def new_user(pw, email="p@skku.edu", code=None, **extra):
+    if code is None:
+        council.connect().execute("DELETE FROM email_codes").connection.commit()
+        code = mail_code(email)[1]
+    return Client().call("/api/signup", {"username": "pwtest" + str(abs(hash(pw)))[:6], "password": pw, "name": "p", "student_id": "2024000090",
+                                         "email": email, "phone": "01012345678", "consent": True, "code": code, **extra})
+def qsignup(email, code, **extra):
+    return new_user("abc123", email, code, username="q" + email[0] + "user", student_id=f"20240002{ord(email[0]) % 100:02d}", **extra)
+assert new_user("abcdefgh")[0] == 400 and new_user("12345678")[0] == 400 and new_user("한글한글한글1")[0] == 400
+assert new_user("abc12")[0] == 400 and new_user("a1" * 70)[0] == 400
+assert new_user("abc123")[0] == 200
+print("가입 인증 코드")
+st, code = mail_code("q@skku.edu")
+assert st == 200 and re.fullmatch(r"\d{6}", code) and sent[-1][0] == "q@skku.edu"
+assert mail_code("q@skku.edu")[0] == 429                                         # 1분 안 재요청 막음
+assert mail_code("q@gmail.com")[0] == 400                                        # 학교 메일만
+assert mail_code("alice@skku.edu")[0] == 409                                     # 이미 가입된 이메일
+assert qsignup("q@skku.edu", "000000" if code != "000000" else "111111")[0] == 400   # 틀린 코드
+assert qsignup("q@skku.edu", "")[0] == 400
+ok = qsignup("q@skku.edu", code, mail_dept=True)
+assert ok[0] == 200 and ok[1]["user"]["mail_dept"] is True and ok[1]["user"]["mail_event"] is False
+assert qsignup("q@skku.edu", code)[0] in (400, 409)                    # 코드는 한 번만
+st, code = mail_code("r@skku.edu")
+for _ in range(5):
+    qsignup("r@skku.edu", "999999" if code != "999999" else "888888")
+assert qsignup("r@skku.edu", code)[0] == 400                          # 5번 틀리면 코드 폐기
+import sqlite3
+con = council.connect()
+assert council.parse_hash(con.execute("SELECT pw FROM users WHERE username='alice'").fetchone()[0])[0] == 600_000
+salt = "ab" * 16
+old = f"{salt}${__import__('hashlib').pbkdf2_hmac('sha256', b'secret1', salt.encode(), 200_000).hex()}"
+con.execute("UPDATE users SET pw=? WHERE username='alice'", (old,)); con.commit()
+assert council.check_pw("secret1", old) and not council.check_pw("secret2", old)
+assert Client().call("/api/login", {"username": "alice", "password": "secret1"})[0] == 200
+assert council.parse_hash(con.execute("SELECT pw FROM users WHERE username='alice'").fetchone()[0])[0] == 600_000
+assert Client().call("/api/login", {"username": "alice", "password": "secret1"})[0] == 200
+con.close()
+print("비밀번호 OK")
+
+# 보안 헤더
+for path in ("/", "/admin", "/api/me", "/api/banners"):
+    r = urlopen(URL + path)
+    h = r.headers
+    assert h["X-Content-Type-Options"] == "nosniff" and h["X-Frame-Options"] == "DENY" and "max-age" in h["Strict-Transport-Security"]
+    assert "frame-ancestors 'none'" in h["Content-Security-Policy"] and h["Referrer-Policy"] == "same-origin"
+page = urlopen(URL + "/")
+if council.INLINE_SCRIPT.findall(open(os.path.join(council.WEB_DIR, "index.html"), "rb").read()):
+    assert "'sha256-" in page.headers["Content-Security-Policy"]
+print("보안 헤더 OK")
+
+# 같은 학번·이메일로는 가입 못 함 (이메일은 대소문자 무시)
+base = {"password": "secret1", "phone": "01012345678", "consent": True}
+assert Client().call("/api/signup", dict(base, username="dupe1", name="d", student_id="2024000001", email="new1@skku.edu")) [0] == 409      # 알리스의 학번
+assert Client().call("/api/signup", dict(base, username="dupe2", name="d", student_id="2024000077", email="ALICE@skku.edu"))[0] == 409      # 알리스의 이메일, 대문자
+assert Client().call("/api/signup", dict(base, username="dupe3", name="d", student_id="2024000077", email="new3@skku.edu", code=mail_code("new3@skku.edu")[1]))[0] == 200
+assert cells("users", users["carol2"]["id"], student_id="2024000001")[0] == 409 and cells("users", users["carol2"]["id"], email="Alice@skku.edu")[0] == 409
+assert cells("users", users["carol2"]["id"], student_id="2024000003", email="carol@g.skku.edu")[0] == 200       # 자기 것 그대로는 괜찮음
+print("중복 가입 막기 OK")
+
+# 가입을 닫으면 아무도 못 가입한다 (기본값)
+council.SIGNUP_OPEN = False
+assert Client().call("/api/signup", dict(base, username="late1", name="l", student_id="2024000055", email="late1@skku.edu"))[0] == 403
+assert Client().call("/api/me")[1]["signup_open"] is False
+assert Client().call("/api/login", {"username": "alice", "password": "secret1"})[0] == 200      # 로그인은 그대로
+council.SIGNUP_OPEN = True
+assert Client().call("/api/me")[1]["signup_open"] is True
+st, d = a.call("/api/admin/signup", {"open": False})
+assert st == 200 and Client().call("/api/me")[1]["signup_open"] is False             # 관리 사이트에서 끄면 환경 기본값보다 우선
+assert a.call("/api/admin/users")[1]["signup_open"] is False
+assert Client().call("/api/signup_code", {"email": "zz@skku.edu"})[0] == 403
+assert Client().call("/api/admin/signup", {"open": True})[0] == 401 and a.call("/api/admin/signup", {"open": "yes"})[0] == 400
+assert a.call("/api/admin/signup", {"open": True})[0] == 200 and Client().call("/api/me")[1]["signup_open"] is True
+print("가입 닫기 OK")
+
+# 공지 메일: 받겠다고 한 분류만, 받은 사람만
+import time
+mails = []
+council.mail_one = lambda to, subject, text, page, unsub: mails.append((to, subject, text, page, unsub))
+def wait_mail(n):
+    for _ in range(50):
+        if len(mails) >= n:
+            return
+        time.sleep(0.05)
+notice = {"kind": "dept", "title": "수강신청 안내", "summary": "다음 주 월요일", "body": "본문", "chips": []}
+assert a.call("/api/mail_prefs", {})[1]["user"]["mail_dept"] is False                  # 기본은 받지 않음
+assert Client().call("/api/mail_prefs", {"mail_dept": True})[0] == 401
+assert a.call("/api/admin/notice_save", notice)[0] == 200
+wait_mail(1)
+assert len(mails) == 1 and mails[0][0] == "q@skku.edu"                               # 학과 공지를 받겠다고 가입한 q 에게만. alice 는 안 받음
+assert a.call("/api/mail_prefs", {"mail_dept": True})[1]["user"] == dict(a.call("/api/me")[1]["user"]) and a.call("/api/me")[1]["user"]["mail_dept"] is True
+assert a.call("/api/admin/notice_save", dict(notice, title="두 번째"))[0] == 200
+wait_mail(3)
+assert sorted(m[0] for m in mails[1:3]) == ["alice@skku.edu", "q@skku.edu"] and "두 번째" in mails[1][1] and "/#/notice/" in mails[1][2] and "알림 차단" in mails[1][3] and mails[1][4].replace("&", "&amp;") in mails[1][3] and "<!--" not in mails[1][3]
+assert a.call("/api/admin/notice_save", dict(notice, kind="event", title="행사"))[0] == 200
+time.sleep(0.3)
+assert len(mails) == 3                                                                 # 행사 공지는 행사 수신을 켠 사람이 없으니 안 나감
+assert a.call("/api/mail_prefs", {"mail_event": True})[1]["user"]["mail_event"] is True
+nid = a.call("/api/admin/notices")[1]["notices"][0]["id"]
+assert a.call("/api/admin/notice_save", dict(notice, id=nid, title="행사 수정"))[0] == 200
+time.sleep(0.3)
+assert len(mails) == 3                                                                 # 고쳐 쓴 공지는 다시 안 보냄
+assert a.call("/api/mail_prefs", {"mail_dept": False})[1]["user"]["mail_dept"] is False
+link = mails[1][4].split(council.PREFIX, 1)[1]
+st, page = Client().call(link, raw=True)
+assert st == 200 and "차단할까요" in page.decode() and a.call("/api/me")[1]["user"]["mail_dept"] is False
+a.call("/api/mail_prefs", {"mail_dept": True})
+try:
+    urlopen(URL + link.replace("&t=", "&t=0")); bad = 200
+except HTTPError as e:
+    bad = e.code
+assert bad == 400                  # 서명이 틀리면 거부
+assert a.call("/api/me")[1]["user"]["mail_dept"] is True                               # 열어 보기만으로는 꺼지지 않음 (메일 검사기가 링크를 미리 열어도 안전)
+urlopen(Request(URL + link, data=b"", method="POST"))
+assert a.call("/api/me")[1]["user"]["mail_dept"] is False                              # 버튼을 눌러야 꺼짐
+print("공지 메일 OK")
+
+# 임시 메일 설정 창: 최고 관리자만 저장
+saved = os.environ.get("SMTP_USER")
+assert Client().call("/api/admin/smtp_setup", {"host": "x", "user": "u@x.com", "password": "p"})[0] == 401
+st, page = Client().call("/mail-setup", raw=True)
+assert st == 200 and b"smtp_setup" in page and b"<!--" not in page
+assert a.call("/api/admin/smtp_setup", {"host": "bad host", "user": "u@x.com", "password": "p"})[0] == 400
+assert a.call("/api/admin/smtp_setup", {"host": "smtp.gmail.com", "user": "nope", "password": "p"})[0] == 400
+assert os.environ.get("SMTP_USER") == saved                                            # 틀린 값은 저장되지 않음
+print("메일 설정 창 OK")

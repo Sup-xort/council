@@ -10,6 +10,7 @@ QR 내용은 {ORIGIN}/council/q/<코드>. 기본 카메라로 찍으면 /q/<코�
 최고 관리자 지정: 웹에서 가입한 뒤 `python3 council.py super <아이디>`.
 표준 라이브러리 + vendor/segno(QR 매트릭스)만 쓴다.
 """
+import base64
 import hashlib
 import hmac
 import json
@@ -25,6 +26,7 @@ import html as htmllib
 from urllib.request import Request, urlopen
 from datetime import date, datetime, timedelta
 from email.message import EmailMessage
+from email.utils import formataddr
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -38,13 +40,16 @@ HOST, PORT = "127.0.0.1", int(os.environ.get("COUNCIL_PORT", 8792))
 DB = os.environ.get("COUNCIL_DB", os.path.join(BASE, "data", "council.db"))
 ORIGIN = os.environ.get("COUNCIL_ORIGIN", "https://sqhsxp.duckdns.org")
 PREFIX = os.environ.get("COUNCIL_PREFIX", "/council")  # 루트에 호스팅하면 ""
+ENV_FILE = os.path.join(BASE, "council.env")
 QR_PREFIX = ORIGIN + PREFIX + "/q/"
 KST = ZoneInfo("Asia/Seoul")
 
+SIGNUP_OPEN = os.environ.get("COUNCIL_SIGNUP") == "open"   # 관리 사이트에서 켜고 끈 값이 없을 때의 기본. 기본은 닫힘
 COOKIE = "scene_sid"
 RESET_MIN = 30                         # 비밀번호 재설정 링크 유효시간
 SESSION_DAYS = 400                     # 브라우저가 허용하는 쿠키 최대 수명 — 쓸 때마다 다시 400일이라 사실상 로그인이 풀리지 않는다
-PBKDF2_ITER = 200_000
+PBKDF2_ITER = 600_000
+PBKDF2_OLD = 200_000                   # 예전에 저장한 비밀번호가 만들어진 횟수. 로그인할 때 새 횟수로 다시 저장한다
 MAX_BODY = 256 * 1024
 CODE_CHARS = "abcdefghjkmnpqrstuvwxyz23456789"   # 헷갈리는 0/o, 1/l/i 제외
 QR_SIZES_CM = (1.5, 2, 2.5, 3, 4)
@@ -85,6 +90,8 @@ CREATE TABLE IF NOT EXISTS notices(id INTEGER PRIMARY KEY, kind TEXT NOT NULL CH
 CREATE TABLE IF NOT EXISTS kind_hours(kind TEXT PRIMARY KEY, hours INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS pulled(src TEXT PRIMARY KEY, at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS email_codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, expires TEXT NOT NULL,
+  tries INTEGER NOT NULL DEFAULT 0, sent_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS resets(token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
   expires TEXT NOT NULL);
 """
@@ -128,6 +135,14 @@ def init_db():
         for table in ("reservations", "users", "applications"):   # 언제 예약·가입·처음 신청했는지. 옛 행은 NULL
             if "created_at" not in {r[1] for r in c.execute(f"PRAGMA table_info({table})")}:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN created_at TEXT")
+        ucols = {r[1] for r in c.execute("PRAGMA table_info(users)")}
+        if "phone" not in ucols:             # 전화번호 (예전 회원은 빈칸)
+            c.execute("ALTER TABLE users ADD COLUMN phone TEXT NOT NULL DEFAULT ''")
+        if "consent_at" not in ucols:        # 개인정보 수집·이용에 동의한 때
+            c.execute("ALTER TABLE users ADD COLUMN consent_at TEXT")
+        for col in ("mail_dept", "mail_event"):     # 공지 메일을 받을지 (학생이 고른다). 기본은 받지 않음
+            if col not in ucols:
+                c.execute(f"ALTER TABLE users ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
         if "dues" not in {r[1] for r in c.execute("PRAGMA table_info(users)")}:      # 학생회비 납부 여부 (관리자가 표시)
             c.execute("ALTER TABLE users ADD COLUMN dues INTEGER NOT NULL DEFAULT 0")
         if "dues_only" not in cols:         # 1 이면 학생회비 납부자만 신청
@@ -136,6 +151,11 @@ def init_db():
             c.execute("INSERT OR IGNORE INTO kind_hours SELECT kind, days*24 FROM kind_rules")
             c.execute("DROP TABLE kind_rules")
         migrate_answers(c)
+        for name, col in (("users_sid_once", "student_id"), ("users_email_once", "lower(email)")):   # 겹치는 옛 회원이 있으면 만들지 못하고 넘어간다 — 가입 때의 검사가 막아 준다
+            try:
+                c.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {name} ON users({col})")
+            except sqlite3.IntegrityError:
+                sys.stderr.write(f"경고: 같은 {col} 의 회원이 있어 중복 방지 색인을 만들지 못했습니다\n")
         if not c.execute("SELECT 1 FROM rooms").fetchone():
             c.executemany("INSERT INTO rooms(name) VALUES(?)", [(r,) for r in ROOMS])
 
@@ -168,14 +188,28 @@ def migrate_answers(c):
         c.execute("ALTER TABLE applications DROP COLUMN answers")
 
 
-def hash_pw(pw, salt=None):
+def hash_pw(pw, salt=None, iters=PBKDF2_ITER):
     salt = salt or secrets.token_hex(16)
-    return f"{salt}${hashlib.pbkdf2_hmac('sha256', pw.encode(), salt.encode(), PBKDF2_ITER).hex()}"
+    return f"{iters}${salt}${hashlib.pbkdf2_hmac('sha256', pw.encode(), salt.encode(), iters).hex()}"
+
+
+def parse_hash(stored):
+    """새 형식은 '횟수$salt$해시', 예전 형식은 'salt$해시'."""
+    parts = stored.split("$")
+    return (int(parts[0]), parts[1]) if len(parts) == 3 else (PBKDF2_OLD, parts[0])
 
 
 def check_pw(pw, stored):
-    salt = stored.split("$", 1)[0]
-    return hmac.compare_digest(hash_pw(pw, salt), stored)
+    iters, salt = parse_hash(stored)
+    return hmac.compare_digest(hash_pw(pw, salt, iters).rsplit("$", 1)[1], stored.rsplit("$", 1)[1])
+
+
+def pw_error(pw):
+    if not isinstance(pw, str) or len(pw) < 6 or len(pw) > 128:
+        return "비밀번호는 6자 이상 128자 이하로 정해 주십시오"
+    if not re.search(r"[A-Za-z]", pw) or not re.search(r"\d", pw):
+        return "비밀번호에는 영문자와 숫자가 모두 들어가야 합니다"
+    return None
 
 
 def tok_hash(tok):
@@ -195,7 +229,7 @@ def mask(name):
 INVISIBLE = re.compile("[​⁠﻿]")
 
 
-LABEL = {"username": "아이디", "name": "이름", "student_id": "학번", "email": "이메일", "title": "제목",
+LABEL = {"username": "아이디", "name": "이름", "student_id": "학번", "email": "이메일", "phone": "전화번호", "title": "제목",
          "summary": "한 줄 소개", "body": "본문", "kind": "종류", "label": "항목 이름"}
 
 
@@ -225,29 +259,89 @@ def parse_dt(v, what):
         raise Err(400, f"{what} 날짜와 시간을 다시 확인해 주십시오")
 
 
+def phone_of(v, required=True):
+    """숫자만 남겨 9~11자리인지 보고 하이픈을 붙인다."""
+    d = re.sub(r"\D", "", str(v or ""))
+    if not d and not required:
+        return ""
+    if not 9 <= len(d) <= 11:
+        raise Err(400, "전화번호를 다시 확인해 주십시오")
+    if len(d) == 11:
+        return f"{d[:3]}-{d[3:7]}-{d[7:]}"
+    if len(d) == 10:
+        return f"{d[:2]}-{d[2:6]}-{d[6:]}" if d.startswith("02") else f"{d[:3]}-{d[3:6]}-{d[6:]}"
+    return f"{d[:2]}-{d[2:5]}-{d[5:]}"
+
+
+def student_id_of(v):
+    v = str(v or "").strip()
+    if not re.fullmatch(r"\d{10}", v):
+        raise Err(400, "학번은 숫자 10자리로 써 주십시오")
+    return v
+
+
+def school_email_of(v):
+    v = str(v or "").strip()
+    if not re.fullmatch(r"[^@\s]+@(g\.)?skku\.edu", v, re.I):
+        raise Err(400, "이메일은 skku.edu 또는 g.skku.edu 주소로 써 주십시오")
+    return v
+
+
 def user_out(u):
-    return dict({k: u[k] for k in ("id", "username", "name", "student_id", "email", "role")}, dues=bool(u["dues"]))
+    return dict({k: u[k] for k in ("id", "username", "name", "student_id", "email", "phone", "role")}, dues=bool(u["dues"]),
+                mail_dept=bool(u["mail_dept"]), mail_event=bool(u["mail_event"]))
+
+
+def taken_by(c, id=None, email=None, student_id=None):
+    """학번·이메일이 이미 다른 회원 것이면 알려 줄 문구를, 아니면 None. 이메일은 대소문자를 가리지 않는다."""
+    if student_id is not None and c.execute("SELECT 1 FROM users WHERE student_id=? AND id IS NOT ?", (student_id, id)).fetchone():
+        return "이미 가입된 학번입니다"
+    if email is not None and c.execute("SELECT 1 FROM users WHERE lower(email)=lower(?) AND id IS NOT ?", (email, id)).fetchone():
+        return "이미 가입된 이메일입니다"
+    return None
 
 
 # ── 인증 ────────────────────────────────────────────────────────────────
 
+def signup_open(c):
+    r = c.execute("SELECT value FROM settings WHERE key='signup_open'").fetchone()
+    return bool(r["value"]) if r else SIGNUP_OPEN
+
+
+def admin_signup(c, me, b, q):
+    if not isinstance(b.get("open"), bool):
+        raise Err(400, "가입을 받을지 끌지 다시 골라 주십시오")
+    c.execute("INSERT INTO settings(key,value) VALUES('signup_open',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (int(b["open"]),))
+    return {"signup_open": b["open"]}
+
+
 def signup(c, me, b, q):
+    if not signup_open(c):
+        raise Err(403, "지금은 새 회원을 받지 않습니다")
     username = s(b, "username", 32)
     if not re.fullmatch(r"[A-Za-z0-9_.-]{3,32}", username):
         raise Err(400, "아이디는 영문과 숫자로 3~32자를 써 주십시오")
     pw = b.get("password") or ""
-    if not isinstance(pw, str) or len(pw) < 6:
-        raise Err(400, "비밀번호는 6자 이상으로 정해 주십시오")
+    if err := pw_error(pw):
+        raise Err(400, err)
     if pw in (s(b, "name", 40), b.get("student_id"), b.get("email")):   # 자동완성이 비밀번호를 다른 칸에 채운 경우
         raise Err(400, "이름·학번·이메일 칸에 비밀번호가 들어간 것 같습니다. 다시 확인해 주십시오")
-    email = s(b, "email", 120)
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-        raise Err(400, "이메일 주소를 다시 확인해 주십시오")
+    email = school_email_of(s(b, "email", 120))
+    sid = student_id_of(b.get("student_id"))
+    phone = phone_of(b.get("phone"))
+    if b.get("consent") is not True:
+        raise Err(400, "개인정보 수집·이용에 동의해 주십시오")
+    taken = taken_by(c, email=email, student_id=sid)
+    if taken:
+        raise Err(409, taken)
+    if mail_ready():
+        check_email_code(c, email, b.get("code"))
     try:
-        cur = c.execute("INSERT INTO users(username,pw,name,student_id,email,created_at) VALUES(?,?,?,?,?,?)",
-                        (username, hash_pw(pw), s(b, "name", 40), s(b, "student_id", 20), email, stamp()))
-    except sqlite3.IntegrityError:
-        raise Err(409, "이미 쓰고 있는 아이디입니다")
+        cur = c.execute("INSERT INTO users(username,pw,name,student_id,email,phone,consent_at,created_at,mail_dept,mail_event) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        (username, hash_pw(pw), s(b, "name", 40), sid, email, phone, stamp(), stamp(),
+                         1 if b.get("mail_dept") is True else 0, 1 if b.get("mail_event") is True else 0))
+    except sqlite3.IntegrityError as e:
+        raise Err(409, "이미 가입된 학번 또는 이메일입니다" if "users." in str(e) and "username" not in str(e) else "이미 쓰고 있는 아이디입니다")
     return new_session(c, cur.lastrowid)
 
 
@@ -255,6 +349,8 @@ def login(c, me, b, q):
     u = c.execute("SELECT * FROM users WHERE username=?", (str(b.get("username", "")).strip(),)).fetchone()
     if not u or not check_pw(str(b.get("password", "")), u["pw"]):
         raise Err(401, "아이디나 비밀번호가 맞지 않습니다")
+    if parse_hash(u["pw"])[0] != PBKDF2_ITER:
+        c.execute("UPDATE users SET pw=? WHERE id=?", (hash_pw(str(b["password"])), u["id"]))
     return new_session(c, u["id"])
 
 
@@ -269,11 +365,164 @@ def new_session(c, uid):
 def send_mail(to, subject, body):
     # SMTP_HOST·SMTP_USER·SMTP_PASS 는 council.env (systemd EnvironmentFile). 465 SSL 만 쓴다
     m = EmailMessage()
-    m["From"], m["To"], m["Subject"] = f"SWITCH 학생회 <{os.environ['SMTP_USER']}>", to, subject
+    m["From"], m["To"], m["Subject"] = formataddr((os.environ.get("SMTP_NAME", "SWITCH 학생회"), os.environ["SMTP_USER"])), to, subject
     m.set_content(body)
     with smtplib.SMTP_SSL(os.environ["SMTP_HOST"], 465, timeout=20) as s:
         s.login(os.environ["SMTP_USER"], os.environ["SMTP_PASS"])
         s.send_message(m)
+
+
+def smtp_setup(c, me, b, q):
+    host = s(b, "host", 100)
+    user = s(b, "user", 120)
+    pw = re.sub(r"\s", "", str(b.get("password") or ""))
+    name = s(b, "name", 60, required=False) or "SWITCH 학생회"
+    if not pw or not re.fullmatch(r"[\w.-]+", host) or not re.fullmatch(r"[^@\s]+@[^@\s]+", user):
+        raise Err(400, "서버 주소, 메일 주소, 앱 비밀번호를 다시 확인해 주십시오")
+    try:
+        with smtplib.SMTP_SSL(host, 465, timeout=15) as srv:
+            srv.login(user, pw)
+    except smtplib.SMTPAuthenticationError:
+        raise Err(400, "메일 주소나 앱 비밀번호가 맞지 않습니다")
+    except Exception:
+        raise Err(502, "메일 서버에 연결하지 못했습니다. 서버 주소를 확인해 주십시오")
+    keep = [l for l in open(ENV_FILE, encoding="utf-8").read().splitlines() if not l.startswith("SMTP_")] if os.path.exists(ENV_FILE) else []
+    esc = lambda v: v.replace("\\", "\\\\").replace('"', '\\"')
+    keep += [f'SMTP_{k}="{esc(v)}"' for k, v in (("HOST", host), ("USER", user), ("PASS", pw), ("NAME", name))]
+    fd = os.open(ENV_FILE + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write("\n".join(keep) + "\n")
+    os.replace(ENV_FILE + ".tmp", ENV_FILE)
+    os.environ.update(SMTP_HOST=host, SMTP_USER=user, SMTP_PASS=pw, SMTP_NAME=name)
+    return {"ok": True}
+
+
+def mail_ready():
+    return bool(os.environ.get("SMTP_HOST"))
+
+
+CODE_MIN = 10                          # 가입 인증 코드 유효시간
+CODE_TRIES = 5
+
+
+def signup_code(c, me, b, q):
+    """가입 화면에서 이메일 소유를 확인할 6자리 코드를 보낸다. 같은 주소에 1분 안에 다시 보내지 않는다."""
+    if not signup_open(c):
+        raise Err(403, "지금은 새 회원을 받지 않습니다")
+    if not mail_ready():
+        raise Err(503, "지금은 메일을 보낼 수 없습니다. 학생회에 문의해 주십시오")
+    email = school_email_of(b.get("email")).lower()
+    if msg := taken_by(c, email=email):
+        raise Err(409, msg)
+    c.execute("DELETE FROM email_codes WHERE expires < ?", (now().isoformat(),))
+    old = c.execute("SELECT sent_at FROM email_codes WHERE email=?", (email,)).fetchone()
+    if old and old["sent_at"] > (now() - timedelta(seconds=60)).isoformat():
+        raise Err(429, "방금 코드를 보냈습니다. 1분 뒤에 다시 눌러 주십시오")
+    code = "".join(secrets.choice("0123456789") for _ in range(6))
+    c.execute("INSERT OR REPLACE INTO email_codes VALUES(?,?,?,0,?)",
+              (email, tok_hash(code), (now() + timedelta(minutes=CODE_MIN)).isoformat(), now().isoformat()))
+    mail_later(email, "[SWITCH] 이메일 인증 코드",
+               f"인증 코드는 {code} 입니다.\n{CODE_MIN}분 안에 가입 화면에 입력해 주십시오.\n\n가입하지 않으셨다면 이 메일은 무시하셔도 됩니다.")
+    return {"ok": True}
+
+
+def check_email_code(c, email, code):
+    email = email.lower()
+    r = c.execute("SELECT * FROM email_codes WHERE email=? AND expires > ?", (email, now().isoformat())).fetchone()
+    if not r:
+        raise Err(400, "인증 코드를 먼저 받아 주십시오")
+    if r["tries"] >= CODE_TRIES:
+        c.execute("DELETE FROM email_codes WHERE email=?", (email,))
+        c.commit()
+        raise Err(400, "코드를 여러 번 틀렸습니다. 코드를 다시 받아 주십시오")
+    if not secrets.compare_digest(r["code"], tok_hash(str(code or "").strip())):
+        c.execute("UPDATE email_codes SET tries=tries+1 WHERE email=?", (email,))
+        c.commit()
+        raise Err(400, "인증 코드가 맞지 않습니다")
+    c.execute("DELETE FROM email_codes WHERE email=?", (email,))
+
+
+def mail_prefs(c, me, b, q):
+    for k in ("mail_dept", "mail_event"):
+        if k in b:
+            c.execute(f"UPDATE users SET {k}=? WHERE id=?", (1 if b[k] is True else 0, me["id"]))
+    u = c.execute("SELECT * FROM users WHERE id=?", (me["id"],)).fetchone()
+    return {"user": user_out(u)}
+
+
+def mail_one(to, subject, text, page, unsub):
+    m = EmailMessage()
+    m["From"], m["To"], m["Subject"] = formataddr((os.environ.get("SMTP_NAME", "SWITCH 학생회"), os.environ["SMTP_USER"])), to, subject
+    m["List-Unsubscribe"] = f"<{unsub}>"
+    m["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+    m.set_content(text)
+    m.add_alternative(page, subtype="html")
+    with smtplib.SMTP_SSL(os.environ["SMTP_HOST"], 465, timeout=30) as s:
+        s.login(os.environ["SMTP_USER"], os.environ["SMTP_PASS"])
+        s.send_message(m)
+
+
+MAIL_KEY_FILE = os.path.join(os.path.dirname(DB), "mail_key")
+NOTICE_TEMPLATE = os.path.join(BASE, "mail_notice.html")
+
+
+def mail_key():
+    if not os.path.exists(MAIL_KEY_FILE):
+        fd = os.open(MAIL_KEY_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(secrets.token_hex(32))
+    with open(MAIL_KEY_FILE) as f:
+        return f.read().strip().encode()
+
+
+def unsub_sig(uid, kind):
+    return hmac.new(mail_key(), f"{uid}:{kind}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def unsub_link(uid, kind):
+    return f"{ORIGIN}{PREFIX}/unsub?u={uid}&k={kind}&t={unsub_sig(uid, kind)}"
+
+
+def notice_page(kind, title, summary, link, unsub):
+    from string import Template
+    with open(NOTICE_TEMPLATE, encoding="utf-8") as f:
+        tpl = Template(f.read())
+    e = htmllib.escape
+    return tpl.substitute(
+        title=e(title), label="행사 공지" if kind == "event" else "학과 공지", preview=e(summary or title)[:100],
+        date=now().strftime("%Y년 %m월 %d일"), summary=e(summary).replace("\n", "<br>") if summary else "새 공지가 올라왔습니다. 전문은 아래 버튼에서 확인해 주십시오.",
+        link=e(link), unsub=e(unsub))
+
+
+def unsub_apply(c, uid, kind, sig):
+    if kind not in ("dept", "event") or not str(uid).isdigit() or not hmac.compare_digest(sig, unsub_sig(uid, kind)):
+        return False
+    c.execute(f"UPDATE users SET mail_{kind}=0 WHERE id=?", (int(uid),))
+    return True
+
+
+def mail_notices(c, rows):
+    """새 공지를 받겠다고 한 회원에게 알린다. rows 는 (id, kind, title, summary). 사람마다 차단 링크가 달라 한 명씩 보낸다. 보내는 일은 따로 돌려 응답을 막지 않는다."""
+    if not mail_ready() or not rows:
+        return
+    jobs = []
+    for nid, kind, title, summary in rows:
+        col = "mail_event" if kind == "event" else "mail_dept"
+        label = "행사 공지" if kind == "event" else "학과 공지"
+        link = f"{ORIGIN}{PREFIX}/#/notice/{nid}"
+        for r in c.execute(f"SELECT id, email FROM users WHERE {col}=1").fetchall():
+            unsub = unsub_link(r["id"], "event" if kind == "event" else "dept")
+            text = (f"[{label}] {title}\n\n{summary}\n\n" if summary else f"[{label}] {title}\n\n") + \
+                   f"전문 보기: {link}\n\n{label} 알림 차단: {unsub}"
+            jobs.append((r["email"], f"[SWITCH] {title}"[:120], text, notice_page(kind, title, summary, link, unsub), unsub))
+
+    def run():
+        for job in jobs:
+            try:
+                mail_one(*job)
+            except Exception as e:
+                sys.stderr.write(f"notice mail failed: {e!r}\n")
+    threading.Thread(target=run, daemon=True).start()
 
 
 def mail_later(to, subject, body):
@@ -313,8 +562,8 @@ def reset(c, me, b, q):
     if not r:
         raise Err(400, "시간이 지났거나 이미 쓴 링크입니다. 다시 요청해 주십시오")
     pw = b.get("password") or ""
-    if not isinstance(pw, str) or len(pw) < 6:
-        raise Err(400, "비밀번호는 6자 이상으로 정해 주십시오")
+    if err := pw_error(pw):
+        raise Err(400, err)
     c.execute("UPDATE users SET pw=? WHERE id=?", (hash_pw(pw), r["user_id"]))
     c.execute("DELETE FROM resets WHERE user_id=?", (r["user_id"],))
     c.execute("DELETE FROM sessions WHERE user_id=?", (r["user_id"],))   # 다른 기기의 로그인은 끊는다
@@ -326,7 +575,7 @@ def logout(c, me, b, q):
 
 
 def get_me(c, me, b, q):
-    return {"user": user_out(me) if me else None}
+    return {"user": user_out(me) if me else None, "signup_open": signup_open(c)}
 
 
 # ── 물품 / QR ────────────────────────────────────────────────────────────
@@ -851,6 +1100,17 @@ def apply(c, me, b, q):
     return {"ok": True}
 
 
+def apply_cancel(c, me, b, q):
+    e = c.execute("SELECT * FROM events WHERE id=?", (b.get("event_id"),)).fetchone()
+    if not e:
+        raise Err(404, "없는 행사입니다")
+    if parse_dt(e["deadline"], "마감") <= now():
+        raise Err(403, "마감된 뒤에는 신청을 취소할 수 없습니다. 학생회에 문의해 주십시오")
+    if not c.execute("DELETE FROM applications WHERE event_id=? AND user_id=?", (e["id"], me["id"])).rowcount:
+        raise Err(404, "신청한 내용이 없습니다")
+    return {"ok": True}
+
+
 def check_fields(fields):
     if not isinstance(fields, list) or len(fields) > 30:
         raise Err(400, "신청서 질문을 다시 확인해 주십시오")
@@ -1044,8 +1304,9 @@ def admin_notice_save(c, me, b, q):
                          vals + (b["id"],)).rowcount:
             raise Err(404, "없는 공지입니다")
     else:
-        c.execute("INSERT INTO notices(kind,title,summary,body,chips,event_id,on_lobby,author_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                  vals + (me["id"], stamp()))
+        cur = c.execute("INSERT INTO notices(kind,title,summary,body,chips,event_id,on_lobby,author_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                        vals + (me["id"], stamp()))
+        mail_notices(c, [(cur.lastrowid, kind, vals[1], vals[2])])
     return {"ok": True}
 
 
@@ -1100,6 +1361,7 @@ def urljoin_sce(href):
 def import_sce(c, articles):
     """새 글만 학과 공지로 넣는다. 오래된 글부터 넣어 목록에서 최신이 위로 온다. 넣은 개수를 돌려준다."""
     n = 0
+    fresh = []
     for a in reversed(articles):
         src = f"sce:{a['no']}"
         if c.execute("SELECT 1 FROM pulled WHERE src=?", (src,)).fetchone() or not a["title"]:
@@ -1108,11 +1370,13 @@ def import_sce(c, articles):
         body = a["body"][:20000]
         summary = (body.split("\n", 1)[0] if body else "")[:100]
         chips = [{"label": "학과 홈페이지에서 보기", "type": "url", "target": a["url"]}] if re.fullmatch(r"https?://[^\s]{1,500}", a["url"]) else []
-        c.execute("INSERT INTO notices(kind,title,summary,body,chips,on_lobby,author_id,created_at) VALUES('dept',?,?,?,?,0,NULL,?)",
-                  (("[%s] %s" % (a["category"], a["title"]) if a["category"] else a["title"])[:100], summary, body,
-                   json.dumps(chips, ensure_ascii=False), d + "T00:00"))
+        title = ("[%s] %s" % (a["category"], a["title"]) if a["category"] else a["title"])[:100]
+        cur = c.execute("INSERT INTO notices(kind,title,summary,body,chips,on_lobby,author_id,created_at) VALUES('dept',?,?,?,?,0,NULL,?)",
+                        (title, summary, body, json.dumps(chips, ensure_ascii=False), d + "T00:00"))
         c.execute("INSERT INTO pulled(src,at) VALUES(?,?)", (src, stamp()))
+        fresh.append((cur.lastrowid, "dept", title, summary))
         n += 1
+    mail_notices(c, fresh[-5:])
     return n
 
 
@@ -1143,7 +1407,7 @@ def sce_loop():
 def admin_users(c, me, b, q):
     """관리자는 회원 목록을 읽기만 한다. 관리자 지정(admin_role)은 최고 관리자만."""
     rows = c.execute("SELECT * FROM users ORDER BY role='user', name").fetchall()
-    return {"users": [dict(user_out(u), created_at=u["created_at"]) for u in rows]}
+    return {"users": [dict(user_out(u), created_at=u["created_at"]) for u in rows], "signup_open": signup_open(c)}
 
 
 def admin_dues(c, me, b, q):
@@ -1173,8 +1437,17 @@ def when_or_none(v, what):
     return parse_dt(v, what).isoformat(timespec="minutes") if v not in (None, "") else None
 
 
-def edit_users(c, id, v):
+LOCKED = ("username", "name", "student_id", "email")     # 계정을 가리키는 칸 — 이메일을 바꾸면 비밀번호 찾기로 그 계정을 차지할 수 있다
+
+
+def edit_users(c, id, v, me=None):
     sets, args = [], []
+    if me is not None and any(k in v for k in LOCKED):
+        if me["role"] != "super":
+            raise Err(403, "아이디·이름·학번·이메일은 최고 관리자만 고칠 수 있습니다")
+        target = c.execute("SELECT role FROM users WHERE id=?", (id,)).fetchone()
+        if target and target["role"] != "user":
+            raise Err(403, "관리자 계정의 아이디·이름·학번·이메일은 여기서 고칠 수 없습니다")
     if "username" in v:
         un = s(v, "username", 32)
         if not re.fullmatch(r"[A-Za-z0-9_.-]{3,32}", un):
@@ -1184,12 +1457,13 @@ def edit_users(c, id, v):
         sets.append("username=?"); args.append(un)
     if "created_at" in v: sets.append("created_at=?"); args.append(when_or_none(v["created_at"], "가입"))
     if "name" in v: sets.append("name=?"); args.append(s(v, "name", 40))
-    if "student_id" in v: sets.append("student_id=?"); args.append(s(v, "student_id", 20))
-    if "email" in v:
-        em = s(v, "email", 120)
-        if "@" not in em or " " in em:
-            raise Err(400, "이메일 주소를 다시 확인해 주십시오")
-        sets.append("email=?"); args.append(em)
+    sid = student_id_of(v["student_id"]) if "student_id" in v else None
+    mail = school_email_of(s(v, "email", 120)) if "email" in v else None
+    if msg := taken_by(c, id, mail, sid):
+        raise Err(409, msg)
+    if sid: sets.append("student_id=?"); args.append(sid)
+    if mail: sets.append("email=?"); args.append(mail)
+    if "phone" in v: sets.append("phone=?"); args.append(phone_of(v["phone"], required=False))
     if "dues" in v: sets.append("dues=?"); args.append(1 if v["dues"] else 0)
     return "users", sets, args
 
@@ -1367,7 +1641,7 @@ def admin_cells(c, me, b, q):
         v = r.get("vals") if isinstance(r, dict) else None
         if not isinstance(v, dict) or not v:
             raise Err(400, "요청을 처리하지 못했습니다. 새로고침한 뒤 다시 시도해 주십시오")
-        table, sets, args = fn(c, r.get("id"), v)
+        table, sets, args = fn(c, r.get("id"), v, me) if fn is edit_users else fn(c, r.get("id"), v)
         if sets and not c.execute(f"UPDATE {table} SET {', '.join(sets)} WHERE id=?", args + [r.get("id")]).rowcount:
             raise Err(404, "삭제된 항목이 있습니다. 새로고침해 주십시오")
     return {"ok": True, "n": len(rows)}
@@ -1427,6 +1701,61 @@ def admin_handover(c, me, b, q):
     return {"ok": True, "to": to["name"]}
 
 
+UNSUB_PAGE = """<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>알림 차단</title>
+<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f3efee;font-family:'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;color:#2b2222}
+main{box-sizing:border-box;width:min(92vw,420px);background:#fff;border-radius:16px;padding:32px 28px;text-align:center}
+h1{font-size:20px;margin:0 0 10px}p{margin:0 0 22px;line-height:1.7;color:#6b5d5b;font-size:14px}
+button,a{display:inline-block;padding:12px 24px;border-radius:10px;border:0;background:#5b4545;color:#fff;font:inherit;font-weight:700;text-decoration:none;cursor:pointer}</style></head>
+<body><main>%s</main></body></html>"""
+UNSUB_ASK = '<h1>%s 알림을 차단할까요?</h1><p>이 메일 주소로 오는 %s 메일이 멈춥니다. 설정 화면에서 언제든 다시 켤 수 있습니다.</p><form method="post" action="%s"><button type="submit">알림 차단</button></form>'
+UNSUB_DONE = '<h1>%s 알림을 차단했습니다</h1><p>더는 %s 메일을 보내지 않습니다.</p><a href="%s/">사이트로 가기</a>'
+UNSUB_BAD = '<h1>차단 링크가 올바르지 않습니다</h1><p>링크가 잘렸을 수 있습니다. 사이트의 설정 화면에서 직접 끌 수 있습니다.</p><a href="%s/#/settings">설정 화면으로</a>'
+
+SETUP_PAGE = """<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>메일 설정</title>
+<style>
+body{margin:0;font:16px/1.6 system-ui,sans-serif;background:#f4f5f7;color:#1c1e21;display:flex;justify-content:center;padding:24px 16px}
+main{width:100%;max-width:420px;background:#fff;border-radius:16px;padding:24px;box-sizing:border-box}
+h1{font-size:20px;margin:0 0 4px}
+p{margin:0 0 16px;color:#5c6270;font-size:14px}
+label{display:block;font-size:14px;font-weight:600;margin:14px 0 4px}
+input{width:100%;box-sizing:border-box;font:inherit;padding:12px;border:1px solid #c9ced6;border-radius:10px}
+button{width:100%;margin-top:20px;font:inherit;font-weight:600;padding:14px;border:0;border-radius:10px;background:#1c1e21;color:#fff}
+button:disabled{opacity:.5}
+#msg{margin-top:14px;font-size:14px;min-height:1.4em}
+.err{color:#c62828}.ok{color:#1b7f3b}
+</style></head><body><main>
+<h1>메일 보내기 설정</h1>
+<p>최고 관리자로 로그인한 상태에서만 저장됩니다. 저장하기 전에 실제로 로그인해 보고, 맞을 때만 저장합니다.</p>
+<form id="f" autocomplete="off">
+<label for="host">메일 서버</label><input id="host" value="smtp.gmail.com" required>
+<label for="user">보내는 메일 주소</label><input id="user" type="email" placeholder="example@gmail.com" required>
+<label for="password">앱 비밀번호</label><input id="password" type="password" autocomplete="new-password" required>
+<label for="name">보내는 이름</label><input id="name" value="SWITCH 학생회">
+<button id="go" type="submit">확인하고 저장</button>
+</form>
+<div id="msg" role="status"></div>
+</main>
+<script>
+var f=document.getElementById('f'),msg=document.getElementById('msg'),go=document.getElementById('go');
+f.addEventListener('submit',function(e){
+e.preventDefault();go.disabled=true;msg.className='';msg.textContent='확인하는 중입니다';
+var body={};['host','user','password','name'].forEach(function(k){body[k]=document.getElementById(k).value});
+fetch('api/admin/smtp_setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+.then(function(r){return r.json().then(function(d){return[r.status,d]})})
+.then(function(x){
+go.disabled=false;
+if(x[0]===200){document.getElementById('password').value='';msg.className='ok';msg.textContent='저장했습니다. 바로 적용됩니다.'}
+else{msg.className='err';msg.textContent=x[0]===401?'먼저 최고 관리자로 로그인해 주십시오':(x[1].error||'저장하지 못했습니다')}
+}).catch(function(){go.disabled=false;msg.className='err';msg.textContent='서버에 연결하지 못했습니다'})
+});
+</script></body></html>""".encode()
+
+
 # 경로 → (함수, 필요한 권한). None=누구나, user=로그인, admin, super
 GET = {"/api/me": (get_me, None), "/api/items": (items, "user"), "/api/week": (week, None), "/api/admin/room_rules": (admin_room_rules, "admin"),
        "/api/my_reservations": (my_reservations, "user"), "/api/events": (events, None), "/api/event": (event, "user"),
@@ -1436,15 +1765,15 @@ GET = {"/api/me": (get_me, None), "/api/items": (items, "user"), "/api/week": (w
        "/api/admin/loans": (admin_loans, "admin"), "/api/admin/reservations": (admin_reservations, "admin"),
        "/api/admin/events": (admin_events, "admin"), "/api/admin/applications": (admin_applications, "admin"),
        "/api/admin/users": (admin_users, "admin")}
-POST = {"/api/signup": (signup, None), "/api/login": (login, None), "/api/logout": (logout, None),
+POST = {"/api/signup": (signup, None), "/api/signup_code": (signup_code, None), "/api/mail_prefs": (mail_prefs, "user"), "/api/login": (login, None), "/api/logout": (logout, None),
         "/api/forgot": (forgot, None), "/api/reset": (reset, None),
         "/api/scan": (scan, "user"), "/api/reserve": (reserve, "user"), "/api/unreserve": (unreserve, "user"),
-        "/api/apply": (apply, "user"), "/api/admin/item_add": (admin_item_add, "admin"),
+        "/api/apply": (apply, "user"), "/api/apply_cancel": (apply_cancel, "user"), "/api/admin/item_add": (admin_item_add, "admin"),
         "/api/admin/item_del": (admin_item_del, "admin"), "/api/admin/item_return": (admin_item_return, "admin"), "/api/admin/kind_hours": (admin_kind_hours, "admin"), "/api/admin/room_rules": (admin_room_rules, "admin"),
         "/api/admin/event_save": (admin_event_save, "admin"), "/api/admin/event_del": (admin_event_del, "admin"),
         "/api/admin/notice_save": (admin_notice_save, "admin"), "/api/admin/notice_del": (admin_notice_del, "admin"),
-        "/api/admin/upload": (admin_upload, "admin"), "/api/admin/dues": (admin_dues, "admin"), "/api/admin/cells": (admin_cells, "admin"), "/api/admin/role": (admin_role, "super"),
-        "/api/admin/handover": (admin_handover, "super")}
+        "/api/admin/upload": (admin_upload, "admin"), "/api/admin/dues": (admin_dues, "admin"), "/api/admin/signup": (admin_signup, "admin"), "/api/admin/cells": (admin_cells, "admin"), "/api/admin/role": (admin_role, "super"),
+        "/api/admin/handover": (admin_handover, "super"), "/api/admin/smtp_setup": (smtp_setup, "super")}
 RANK = {None: 0, "user": 1, "admin": 2, "super": 3}
 RAW_BODY = {admin_upload}              # JSON 이 아니라 바이트 그대로 받는 곳
 # 화면은 React 로 만들어 web/dist 에 구운 것을 보낸다 (원본은 web/src, 굽기: cd web && npm run build)
@@ -1456,6 +1785,23 @@ ASSET = re.compile(r"/assets/([\w.-]+\.(js|css|svg|woff2|png))")
 NEXT = "/next"                         # 옮기는 동안 쓰던 미리 보기 주소 — 이제 원래 주소로 보낸다
 
 
+SECURITY_HEADERS = (
+    ("X-Content-Type-Options", "nosniff"),
+    ("X-Frame-Options", "DENY"),
+    ("Referrer-Policy", "same-origin"),
+    ("Strict-Transport-Security", "max-age=31536000"),
+    ("Permissions-Policy", "camera=(self), microphone=(), geolocation=()"),
+)
+INLINE_SCRIPT = re.compile(rb"<script>(.*?)</script>", re.S)
+
+
+def csp(scripts=()):
+    """화면 파일 안에 직접 들어 있는 짧은 스크립트(테마 복원)는 내용 지문으로만 허용한다."""
+    src = " ".join(["'self'"] + [f"'sha256-{base64.b64encode(hashlib.sha256(x).digest()).decode()}'" for x in scripts])
+    return (f"default-src 'self'; script-src {src}; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; "
+            "frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+
+
 class H(BaseHTTPRequestHandler):
     server_version = "switch"
 
@@ -1463,11 +1809,14 @@ class H(BaseHTTPRequestHandler):
         if not self.path.startswith("/api/me"):
             sys.stderr.write(fmt % a + "\n")
 
-    def send(self, status, body, ctype="application/json; charset=utf-8", headers=(), cache="no-store"):
+    def send(self, status, body, ctype="application/json; charset=utf-8", headers=(), cache="no-store", scripts=()):
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", cache)
+        for k, v in SECURITY_HEADERS:
+            self.send_header(k, v)
+        self.send_header("Content-Security-Policy", csp(scripts))
         for k, v in headers:
             self.send_header(k, v)
         self.end_headers()
@@ -1496,6 +1845,10 @@ class H(BaseHTTPRequestHandler):
             with open(os.path.join(IMG_DIR, m[1]), "rb") as f:
                 return self.send(200, f.read(), IMG_TYPES[m[1].rsplit(".", 1)[1]],
                                  [("X-Content-Type-Options", "nosniff")], cache="public, max-age=31536000, immutable")
+        if path == "/unsub":
+            return self.unsub(False)
+        if path == "/mail-setup":
+            return self.send(200, SETUP_PAGE, "text/html; charset=utf-8", cache="no-store", scripts=INLINE_SCRIPT.findall(SETUP_PAGE))
         if path == "/admin/":
             return self.send(301, b"", "text/plain", [("Location", "../admin")])
         if path in PAGES:
@@ -1503,7 +1856,8 @@ class H(BaseHTTPRequestHandler):
             if not os.path.isfile(f):
                 return self.send(503, '{"error":"화면 파일이 없습니다. web 폴더에서 npm run build 를 실행해 주십시오"}'.encode())
             with open(f, "rb") as fh:          # 화면 파일은 매번 새로 확인 — 새로 구우면 바로 바뀐다
-                return self.send(200, fh.read(), "text/html; charset=utf-8", cache="no-cache")
+                page = fh.read()
+                return self.send(200, page, "text/html; charset=utf-8", cache="no-cache", scripts=INLINE_SCRIPT.findall(page))
         if m := ASSET.fullmatch(path):
             f = os.path.join(WEB_DIR, "assets", m[1])
             if not os.path.isfile(f):
@@ -1512,6 +1866,21 @@ class H(BaseHTTPRequestHandler):
                 return self.send(200, fh.read(), ASSET_TYPES[m[2]], cache="public, max-age=31536000, immutable")
         self.api(GET)
 
+    def unsub(self, apply):
+        q = parse_qs(urlparse(self.path).query)
+        uid, kind, sig = (q.get(k, [""])[0] for k in ("u", "k", "t"))
+        label = "행사 공지" if kind == "event" else "학과 공지"
+        ok = kind in ("dept", "event") and str(uid).isdigit() and hmac.compare_digest(sig, unsub_sig(uid, kind))
+        if ok and apply:
+            c = connect()
+            try:
+                unsub_apply(c, uid, kind, sig)
+                c.commit()
+            finally:
+                c.close()
+        body = (UNSUB_DONE % (label, label, PREFIX) if apply else UNSUB_ASK % (label, label, htmllib.escape("unsub?" + urlparse(self.path).query, quote=True))) if ok else UNSUB_BAD % PREFIX
+        self.send(200 if ok else 400, (UNSUB_PAGE % body).encode(), "text/html; charset=utf-8")
+
     def do_POST(self):
         # 다른 사이트에서 쿠키를 싣고 오는 요청 차단 (SameSite=Lax 에 더해)
         origin = self.headers.get("Origin")
@@ -1519,6 +1888,8 @@ class H(BaseHTTPRequestHandler):
             return self.send(403, '{"error":"다른 사이트에서 보낸 요청은 받지 않습니다"}'.encode())
         if self.path.startswith(NEXT + "/"):
             self.path = self.path[len(NEXT):]
+        if urlparse(self.path).path == "/unsub":
+            return self.unsub(True)
         self.api(POST)
 
     def api(self, table):

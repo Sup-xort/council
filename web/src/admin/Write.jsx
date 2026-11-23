@@ -95,7 +95,7 @@ const PREV = {text: '단답형 텍스트', long: '장문형 텍스트', checkbox
 export function EventWrite({id}) {
   const {data} = useLoad(() => id === 'new' ? null : api('admin/events'), [id]);
   if (id !== 'new' && !data) return <Page><Head title="행사 수정" /><Loading /></Page>;
-  const found = data?.events.find(e => e.id === +id);
+  const found = data?.events.find(e => e.id === id);
   if (id !== 'new' && !found) { toast('없는 행사입니다'); location.replace('#/events'); return null; }
   return <EventForm key={id} id={id} e={found || {title: '', body: '', starts_at: '', deadline: '', on_lobby: true, fields: [], n: 0}} isNew={!found} />;
 }

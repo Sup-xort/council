@@ -27,12 +27,12 @@ const ROUTES = [
   [/^\/items$/, () => <Items />, true],
   ...(SEMINAR ? [[/^\/reserve$/, ({q}) => <Reserve q={q} />, true]] : []),
   [/^\/events$/, () => <Events />],
-  [/^\/event\/(\d+)\/apply$/, ({m}) => <EventApply id={m[1]} />, true],
-  [/^\/event\/(\d+)$/, ({m, q}) => <Event id={m[1]} q={q} />, true],
+  [/^\/event\/([0-9a-f]{16})\/apply$/, ({m}) => <EventApply id={m[1]} />, true],
+  [/^\/event\/([0-9a-f]{16})$/, ({m, q}) => <Event id={m[1]} q={q} />, true],
   [/^\/privacy$/, () => <Privacy />],
   [/^\/settings$/, () => <Settings />, true],
   [/^\/notices$/, () => <Notices />],
-  [/^\/notice\/(\d+)$/, ({m}) => <Notice id={m[1]} />],
+  [/^\/notice\/([0-9a-f]{16})$/, ({m}) => <Notice id={m[1]} />],
 ];
 const BARE = /^\/(login|signup|forgot|reset)/;     // 로그인·가입·찾기 화면은 메뉴 없이
 const TABS = [['#/', '로비', Home], ['#/notices', '공지', Megaphone, '/notice'], ['#/items', '대여', Umbrella], ...(SEMINAR ? [['#/reserve', '예약', CalendarClock]] : []), ['#/events', '행사', PartyPopper, '/event']];

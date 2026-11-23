@@ -151,6 +151,7 @@ def init_db():
             c.execute("INSERT OR IGNORE INTO kind_hours SELECT kind, days*24 FROM kind_rules")
             c.execute("DROP TABLE kind_rules")
         migrate_answers(c)
+        add_pids(c)
         for name, col in (("users_sid_once", "student_id"), ("users_email_once", "lower(email)")):   # 겹치는 옛 회원이 있으면 만들지 못하고 넘어간다 — 가입 때의 검사가 막아 준다
             try:
                 c.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {name} ON users({col})")
@@ -158,6 +159,40 @@ def init_db():
                 sys.stderr.write(f"경고: 같은 {col} 의 회원이 있어 중복 방지 색인을 만들지 못했습니다\n")
         if not c.execute("SELECT 1 FROM rooms").fetchone():
             c.executemany("INSERT INTO rooms(name) VALUES(?)", [(r,) for r in ROOMS])
+
+
+PID = re.compile(r"[0-9a-f]{16}")
+
+
+def new_pid():
+    return secrets.token_hex(8)
+
+
+def add_pids(c):
+    """회원·공지·행사의 바깥용 번호. 주소·메일 링크·API 에는 차례대로 붙는 id 대신 이 무작위 번호만 나간다."""
+    for t in ("users", "events", "notices"):
+        if "pid" not in {r[1] for r in c.execute(f"PRAGMA table_info({t})")}:
+            c.execute(f"ALTER TABLE {t} ADD COLUMN pid TEXT")
+        for (i,) in c.execute(f"SELECT id FROM {t} WHERE pid IS NULL").fetchall():
+            c.execute(f"UPDATE {t} SET pid=? WHERE id=?", (new_pid(), i))
+        c.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {t}_pid ON {t}(pid)")
+    for n in c.execute("SELECT id, chips FROM notices").fetchall():     # 예전 바로가기 버튼은 행사·공지를 id 로 가리켰다
+        chips = json.loads(n["chips"] or "[]")
+        for ch in chips:
+            if ch.get("type") in ("event", "notice") and str(ch.get("target", "")).isdigit():
+                r = c.execute(f"SELECT pid FROM {ch['type']}s WHERE id=?", (int(ch["target"]),)).fetchone()
+                ch["target"] = r[0] if r else ""
+        c.execute("UPDATE notices SET chips=? WHERE id=?", (json.dumps(chips, ensure_ascii=False), n["id"]))
+
+
+def by_pid(c, table, pid):
+    pid = str(pid or "")
+    return c.execute(f"SELECT * FROM {table} WHERE pid=?", (pid,)).fetchone() if PID.fullmatch(pid) else None
+
+
+def id_of(c, table, pid):
+    r = by_pid(c, table, pid)
+    return r["id"] if r else None
 
 
 def migrate_answers(c):
@@ -288,7 +323,7 @@ def school_email_of(v):
 
 
 def user_out(u):
-    return dict({k: u[k] for k in ("id", "username", "name", "student_id", "email", "phone", "role")}, dues=bool(u["dues"]),
+    return dict({k: u[k] for k in ("username", "name", "student_id", "email", "phone", "role")}, dues=bool(u["dues"]),
                 mail_dept=bool(u["mail_dept"]), mail_event=bool(u["mail_event"]))
 
 
@@ -337,8 +372,8 @@ def signup(c, me, b, q):
     if mail_ready():
         check_email_code(c, email, b.get("code"))
     try:
-        cur = c.execute("INSERT INTO users(username,pw,name,student_id,email,phone,consent_at,created_at,mail_dept,mail_event) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                        (username, hash_pw(pw), s(b, "name", 40), sid, email, phone, stamp(), stamp(),
+        cur = c.execute("INSERT INTO users(pid,username,pw,name,student_id,email,phone,consent_at,created_at,mail_dept,mail_event) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                        (new_pid(), username, hash_pw(pw), s(b, "name", 40), sid, email, phone, stamp(), stamp(),
                          1 if b.get("mail_dept") is True else 0, 1 if b.get("mail_event") is True else 0))
     except sqlite3.IntegrityError as e:
         raise Err(409, "이미 가입된 학번 또는 이메일입니다" if "users." in str(e) and "username" not in str(e) else "이미 쓰고 있는 아이디입니다")
@@ -362,11 +397,13 @@ def new_session(c, uid):
     return {"user": user_out(u)}, tok
 
 
-def send_mail(to, subject, body):
+def send_mail(to, subject, body, page=None):
     # SMTP_HOST·SMTP_USER·SMTP_PASS 는 council.env (systemd EnvironmentFile). 465 SSL 만 쓴다
     m = EmailMessage()
     m["From"], m["To"], m["Subject"] = formataddr((os.environ.get("SMTP_NAME", "SWITCH 학생회"), os.environ["SMTP_USER"])), to, subject
     m.set_content(body)
+    if page:
+        m.add_alternative(page, subtype="html")
     with smtplib.SMTP_SSL(os.environ["SMTP_HOST"], 465, timeout=20) as s:
         s.login(os.environ["SMTP_USER"], os.environ["SMTP_PASS"])
         s.send_message(m)
@@ -422,7 +459,9 @@ def signup_code(c, me, b, q):
     c.execute("INSERT OR REPLACE INTO email_codes VALUES(?,?,?,0,?)",
               (email, tok_hash(code), (now() + timedelta(minutes=CODE_MIN)).isoformat(), now().isoformat()))
     mail_later(email, "[SWITCH] 이메일 인증 코드",
-               f"인증 코드는 {code} 입니다.\n{CODE_MIN}분 안에 가입 화면에 입력해 주십시오.\n\n가입하지 않으셨다면 이 메일은 무시하셔도 됩니다.")
+               f"인증 코드는 {code} 입니다.\n{CODE_MIN}분 안에 가입 화면에 입력해 주십시오.\n\n가입하지 않으셨다면 이 메일은 무시하셔도 됩니다.",
+               system_page("이메일 인증 코드", f"아래 코드를 {CODE_MIN}분 안에 가입 화면에 입력해 주십시오.", big=code,
+                           note="가입하지 않으셨다면 이 메일은 무시하셔도 됩니다."))
     return {"ok": True}
 
 
@@ -475,12 +514,16 @@ def mail_key():
         return f.read().strip().encode()
 
 
-def unsub_sig(uid, kind):
-    return hmac.new(mail_key(), f"{uid}:{kind}".encode(), hashlib.sha256).hexdigest()[:32]
+def unsub_sig(upid, kind):
+    return hmac.new(mail_key(), f"u:{upid}:{kind}".encode(), hashlib.sha256).hexdigest()[:32]
 
 
-def unsub_link(uid, kind):
-    return f"{ORIGIN}{PREFIX}/unsub?u={uid}&k={kind}&t={unsub_sig(uid, kind)}"
+def unsub_ok(upid, kind, sig):
+    return kind in ("dept", "event") and PID.fullmatch(str(upid)) is not None and hmac.compare_digest(str(sig), unsub_sig(upid, kind))
+
+
+def unsub_link(upid, kind):
+    return f"{ORIGIN}{PREFIX}/unsub?u={upid}&k={kind}&t={unsub_sig(upid, kind)}"
 
 
 def notice_page(kind, title, summary, link, unsub):
@@ -494,15 +537,15 @@ def notice_page(kind, title, summary, link, unsub):
         link=e(link), unsub=e(unsub))
 
 
-def unsub_apply(c, uid, kind, sig):
-    if kind not in ("dept", "event") or not str(uid).isdigit() or not hmac.compare_digest(sig, unsub_sig(uid, kind)):
+def unsub_apply(c, upid, kind, sig):
+    if not unsub_ok(upid, kind, sig):
         return False
-    c.execute(f"UPDATE users SET mail_{kind}=0 WHERE id=?", (int(uid),))
+    c.execute(f"UPDATE users SET mail_{kind}=0 WHERE pid=?", (upid,))
     return True
 
 
 def mail_notices(c, rows):
-    """새 공지를 받겠다고 한 회원에게 알린다. rows 는 (id, kind, title, summary). 사람마다 차단 링크가 달라 한 명씩 보낸다. 보내는 일은 따로 돌려 응답을 막지 않는다."""
+    """새 공지를 받겠다고 한 회원에게 알린다. rows 는 (공지 pid, kind, title, summary). 사람마다 차단 링크가 달라 한 명씩 보낸다. 보내는 일은 따로 돌려 응답을 막지 않는다."""
     if not mail_ready() or not rows:
         return
     jobs = []
@@ -510,8 +553,8 @@ def mail_notices(c, rows):
         col = "mail_event" if kind == "event" else "mail_dept"
         label = "행사 공지" if kind == "event" else "학과 공지"
         link = f"{ORIGIN}{PREFIX}/#/notice/{nid}"
-        for r in c.execute(f"SELECT id, email FROM users WHERE {col}=1").fetchall():
-            unsub = unsub_link(r["id"], "event" if kind == "event" else "dept")
+        for r in c.execute(f"SELECT pid, email FROM users WHERE {col}=1").fetchall():
+            unsub = unsub_link(r["pid"], "event" if kind == "event" else "dept")
             text = (f"[{label}] {title}\n\n{summary}\n\n" if summary else f"[{label}] {title}\n\n") + \
                    f"전문 보기: {link}\n\n{label} 알림 차단: {unsub}"
             jobs.append((r["email"], f"[SWITCH] {title}"[:120], text, notice_page(kind, title, summary, link, unsub), unsub))
@@ -525,11 +568,30 @@ def mail_notices(c, rows):
     threading.Thread(target=run, daemon=True).start()
 
 
-def mail_later(to, subject, body):
+SYSTEM_TEMPLATE = os.path.join(BASE, "mail_system.html")
+
+
+def system_page(title, intro, big=None, button=None, note=""):
+    """인증 코드·비밀번호 찾기처럼 요청한 사람에게만 가는 안내 메일. 차단 버튼은 없다."""
+    from string import Template
+    with open(SYSTEM_TEMPLATE, encoding="utf-8") as f:
+        tpl = Template(f.read())
+    e = htmllib.escape
+    extra = ""
+    if big:
+        extra += ('<tr><td align="center" style="padding:12px 28px;"><div style="display:inline-block;padding:16px 28px;border-radius:12px;background:#f0e7e5;'
+                  f'font-size:32px;font-weight:700;letter-spacing:8px;color:#5b4545;">{e(big)}</div></td></tr>')
+    if button:
+        extra += ('<tr><td align="left" style="padding:12px 28px 8px 28px;"><a href="' + e(button[1]) + '" style="display:inline-block;padding:13px 26px;border-radius:10px;'
+                  'background:#5b4545;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;">' + e(button[0]) + '</a></td></tr>')
+    return tpl.substitute(title=e(title), preview=e(title), intro=e(intro).replace("\n", "<br>"), extra=extra, note=e(note).replace("\n", "<br>"))
+
+
+def mail_later(to, subject, body, page=None):
     # 응답을 기다리게 하지 않고, 걸린 시간·실패로 가입 여부가 드러나지 않게 따로 보낸다
     def run():
         try:
-            send_mail(to, subject, body)
+            send_mail(to, subject, body, page)
         except Exception as e:
             sys.stderr.write(f"mail to {to} failed: {e!r}\n")
     threading.Thread(target=run, daemon=True).start()
@@ -552,7 +614,9 @@ def forgot(c, me, b, q):
         mail_later(u["email"], "[SWITCH] 아이디 / 비밀번호 찾기",
                    f"{u['name']} 님, 아이디는 {u['username']} 입니다.\n\n"
                    f"비밀번호를 바꾸려면 {RESET_MIN}분 안에 아래 링크를 여십시오.\n"
-                   f"{ORIGIN}{PREFIX}/#/reset/{tok}\n\n요청하지 않았다면 이 메일은 무시하셔도 됩니다.")
+                   f"{ORIGIN}{PREFIX}/#/reset/{tok}\n\n요청하지 않았다면 이 메일은 무시하셔도 됩니다.",
+                   system_page("아이디 / 비밀번호 찾기", f"{u['name']} 님, 아이디는 {u['username']} 입니다.\n비밀번호를 바꾸려면 {RESET_MIN}분 안에 아래 버튼을 누르십시오.",
+                               button=("비밀번호 바꾸기", f"{ORIGIN}{PREFIX}/#/reset/{tok}"), note="요청하지 않았다면 이 메일은 무시하셔도 됩니다."))
     return {"ok": True}
 
 
@@ -1012,7 +1076,8 @@ def save_answers(c, app_id, fields, ans):
 
 
 def event_out(c, e):
-    d = dict(e)
+    d = dict(e, id=e["pid"])
+    del d["pid"]
     d["fields"] = load_fields(c, e["id"])
     d["on_lobby"] = bool(e["on_lobby"])
     d["dues_only"] = bool(e["dues_only"])
@@ -1027,7 +1092,7 @@ def count_of(c, e):
 def gauge(c, e):
     """공개해도 되는 신청 현황. show_count=0 이면 n 을 뺀다. 정원이 없으면 capacity=None."""
     n, cap = count_of(c, e), e["capacity"]
-    return {"id": e["id"], "title": e["title"], "deadline": e["deadline"], "capacity": cap,
+    return {"id": e["pid"], "title": e["title"], "deadline": e["deadline"], "capacity": cap,
             "n": n if e["show_count"] else None, "show_count": bool(e["show_count"]),
             "full": cap is not None and n >= cap, "closed": parse_dt(e["deadline"], "마감") <= now()}
 
@@ -1039,12 +1104,12 @@ def events(c, me, b, q):
 
 
 def event(c, me, b, q):
-    e = c.execute("SELECT * FROM events WHERE id=?", (q.get("id", ["0"])[0],)).fetchone()
+    e = by_pid(c, "events", q.get("id", [""])[0])
     if not e:
         raise Err(404, "없는 행사입니다")
     a = c.execute("SELECT id, updated_at FROM applications WHERE event_id=? AND user_id=?", (e["id"], me["id"])).fetchone()
-    nt = c.execute("SELECT id FROM notices WHERE event_id=? ORDER BY id DESC LIMIT 1", (e["id"],)).fetchone()
-    return {"event": event_out(c, e), "gauge": gauge(c, e), "notice_id": nt["id"] if nt else None,
+    nt = c.execute("SELECT pid FROM notices WHERE event_id=? ORDER BY id DESC LIMIT 1", (e["id"],)).fetchone()
+    return {"event": event_out(c, e), "gauge": gauge(c, e), "notice_id": nt["pid"] if nt else None,
             "application": {"answers": answers_of(c, [a["id"]], {e["id"]: load_fields(c, e["id"])}, {a["id"]: e["id"]})[a["id"]], "updated_at": a["updated_at"]} if a else None}
 
 
@@ -1079,7 +1144,7 @@ def check_answers(fields, ans):
 
 
 def apply(c, me, b, q):
-    e = c.execute("SELECT * FROM events WHERE id=?", (b.get("event_id"),)).fetchone()
+    e = by_pid(c, "events", b.get("event_id"))
     if not e:
         raise Err(404, "없는 행사입니다")
     if parse_dt(e["deadline"], "마감") <= now():
@@ -1101,7 +1166,7 @@ def apply(c, me, b, q):
 
 
 def apply_cancel(c, me, b, q):
-    e = c.execute("SELECT * FROM events WHERE id=?", (b.get("event_id"),)).fetchone()
+    e = by_pid(c, "events", b.get("event_id"))
     if not e:
         raise Err(404, "없는 행사입니다")
     if parse_dt(e["deadline"], "마감") <= now():
@@ -1157,32 +1222,32 @@ def admin_event_save(c, me, b, q):
             cap, 0 if b.get("show_count") is False else 1, 1 if b.get("dues_only") else 0)
     fields = check_fields(b.get("fields", []))
     if b.get("id"):
-        if not c.execute("UPDATE events SET title=?, body=?, starts_at=?, deadline=?, on_lobby=?, capacity=?, show_count=?, dues_only=? WHERE id=?",
-                         vals + (b["id"],)).rowcount:
+        eid = id_of(c, "events", b["id"])
+        if not eid:
             raise Err(404, "없는 행사입니다")
-        eid = b["id"]
+        c.execute("UPDATE events SET title=?, body=?, starts_at=?, deadline=?, on_lobby=?, capacity=?, show_count=?, dues_only=? WHERE id=?", vals + (eid,))
     else:
-        eid = c.execute("INSERT INTO events(title,body,starts_at,deadline,on_lobby,capacity,show_count,dues_only) VALUES(?,?,?,?,?,?,?,?)", vals).lastrowid
+        eid = c.execute("INSERT INTO events(pid,title,body,starts_at,deadline,on_lobby,capacity,show_count,dues_only) VALUES(?,?,?,?,?,?,?,?,?)", (new_pid(),) + vals).lastrowid
     save_fields(c, eid, fields)
     return {"ok": True}
 
 
 def admin_event_del(c, me, b, q):
-    c.execute("DELETE FROM events WHERE id=?", (b.get("id"),))
+    c.execute("DELETE FROM events WHERE pid=?", (str(b.get("id") or ""),))
     return {"ok": True}
 
 
 def admin_applications(c, me, b, q):
     """id 가 있으면 그 행사, 없으면 모든 행사의 신청을 한 번에."""
-    eid = q.get("id", [""])[0]
-    if eid:
-        e = c.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
-        if not e:
-            raise Err(404, "없는 행사입니다")
+    e = by_pid(c, "events", q.get("id", [""])[0]) if q.get("id", [""])[0] else None
+    if q.get("id", [""])[0] and not e:
+        raise Err(404, "없는 행사입니다")
+    eid = e["id"] if e else None
+    if e:
         evs = [e]
     else:
         evs = c.execute("SELECT * FROM events ORDER BY id DESC").fetchall()
-    rows = c.execute(f"""SELECT a.id, a.user_id, a.event_id, u.name, u.student_id, u.email, u.dues, a.updated_at, a.created_at FROM applications a
+    rows = c.execute(f"""SELECT a.id, a.user_id, (SELECT pid FROM events WHERE id=a.event_id) AS event_id, u.name, u.student_id, u.email, u.dues, a.updated_at, a.created_at FROM applications a
                          JOIN users u ON u.id=a.user_id {'WHERE a.event_id=?' if eid else ''} ORDER BY a.id""",
                      (eid,) if eid else ()).fetchall()
     out = {"events": [event_out(c, e) for e in evs]}
@@ -1204,12 +1269,13 @@ def readable(me, n):
 
 
 def notice_out(c, n, full=False):
-    d = {"id": n["id"], "kind": n["kind"], "title": n["title"], "summary": n["summary"], "on_lobby": bool(n["on_lobby"]),
-         "chips": json.loads(n["chips"]), "created_at": n["created_at"], "event_id": n["event_id"]}
+    d = {"id": n["pid"], "kind": n["kind"], "title": n["title"], "summary": n["summary"], "on_lobby": bool(n["on_lobby"]),
+         "chips": json.loads(n["chips"]), "created_at": n["created_at"], "event_id": None}
     u = c.execute("SELECT name FROM users WHERE id=?", (n["author_id"],)).fetchone()
     d["author"] = u["name"] if u else ""
     e = c.execute("SELECT * FROM events WHERE id=?", (n["event_id"],)).fetchone() if n["event_id"] else None
     d["event"] = gauge(c, e) if e else None
+    d["event_id"] = e["pid"] if e else None
     if full:
         d["body"] = n["body"]
     return d
@@ -1223,9 +1289,9 @@ def banners(c, me, b, q):
         g = gauge(c, e)
         if g["closed"]:
             continue
-        out.append({"type": "event", "id": e["id"], "kind": "event", "title": e["title"],
+        out.append({"type": "event", "id": e["pid"], "kind": "event", "title": e["title"],
                     "summary": e["body"].split("\n", 1)[0][:100], "starts_at": e["starts_at"], "event": g,
-                    "chips": [{"label": "참여 신청", "type": "event", "target": str(e["id"])}]})
+                    "chips": [{"label": "참여 신청", "type": "event", "target": e["pid"]}]})
     return {"banners": out}
 
 
@@ -1244,14 +1310,14 @@ def notices(c, me, b, q):
 
 
 def notice(c, me, b, q):
-    n = c.execute("SELECT * FROM notices WHERE id=?", (q.get("id", ["0"])[0],)).fetchone()
+    n = by_pid(c, "notices", q.get("id", [""])[0])
     if not me and not (n and readable(me, n)):     # 비로그인에겐 없는 글과 막힌 글이 같은 답
         raise Err(401, "로그인해 주십시오")
     if not n:
         raise Err(404, "없는 공지입니다")
     vis = "" if me else " AND kind='event'"
-    prev = c.execute(f"SELECT id,title FROM notices WHERE id<?{vis} ORDER BY id DESC LIMIT 1", (n["id"],)).fetchone()
-    nxt = c.execute(f"SELECT id,title FROM notices WHERE id>?{vis} ORDER BY id LIMIT 1", (n["id"],)).fetchone()
+    prev = c.execute(f"SELECT pid AS id,title FROM notices WHERE id<?{vis} ORDER BY id DESC LIMIT 1", (n["id"],)).fetchone()
+    nxt = c.execute(f"SELECT pid AS id,title FROM notices WHERE id>?{vis} ORDER BY id LIMIT 1", (n["id"],)).fetchone()
     return {"notice": notice_out(c, n, full=True), "prev": dict(prev) if prev else None, "next": dict(nxt) if nxt else None}
 
 
@@ -1266,9 +1332,9 @@ def check_chips(c, chips):
         if typ == "tab":
             ok = target in TABS
         elif typ == "event":
-            ok = bool(c.execute("SELECT 1 FROM events WHERE id=?", (target,)).fetchone())
+            ok = by_pid(c, "events", target) is not None
         elif typ == "notice":
-            ok = bool(c.execute("SELECT 1 FROM notices WHERE id=?", (target,)).fetchone())
+            ok = by_pid(c, "notices", target) is not None
         elif typ == "url":
             ok = re.fullmatch(r"https?://[^\s]{1,500}", target) is not None
         else:
@@ -1284,7 +1350,7 @@ def admin_notices(c, me, b, q):
 
 
 def admin_notice(c, me, b, q):
-    n = c.execute("SELECT * FROM notices WHERE id=?", (q.get("id", ["0"])[0],)).fetchone()
+    n = by_pid(c, "notices", q.get("id", [""])[0])
     if not n:
         raise Err(404, "없는 공지입니다")
     return {"notice": notice_out(c, n, full=True)}
@@ -1294,24 +1360,25 @@ def admin_notice_save(c, me, b, q):
     kind = b.get("kind")
     if kind not in ("dept", "event"):
         raise Err(400, "공지 분류를 다시 골라 주십시오")
-    eid = b.get("event_id") or None
-    if eid and not c.execute("SELECT 1 FROM events WHERE id=?", (eid,)).fetchone():
+    eid = id_of(c, "events", b.get("event_id")) if b.get("event_id") else None
+    if b.get("event_id") and not eid:
         raise Err(400, "연결한 행사가 지워졌습니다. 다른 행사를 골라 주십시오")
     vals = (kind, s(b, "title", 100), s(b, "summary", 100, required=False), s(b, "body", 20000, required=False),
             json.dumps(check_chips(c, b.get("chips", [])), ensure_ascii=False), eid, 1 if b.get("on_lobby") else 0)
     if b.get("id"):
-        if not c.execute("UPDATE notices SET kind=?, title=?, summary=?, body=?, chips=?, event_id=?, on_lobby=? WHERE id=?",
-                         vals + (b["id"],)).rowcount:
+        if not c.execute("UPDATE notices SET kind=?, title=?, summary=?, body=?, chips=?, event_id=?, on_lobby=? WHERE pid=?",
+                         vals + (str(b["id"]),)).rowcount:
             raise Err(404, "없는 공지입니다")
     else:
-        cur = c.execute("INSERT INTO notices(kind,title,summary,body,chips,event_id,on_lobby,author_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                        vals + (me["id"], stamp()))
-        mail_notices(c, [(cur.lastrowid, kind, vals[1], vals[2])])
+        pid = new_pid()
+        c.execute("INSERT INTO notices(pid,kind,title,summary,body,chips,event_id,on_lobby,author_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                  (pid,) + vals + (me["id"], stamp()))
+        mail_notices(c, [(pid, kind, vals[1], vals[2])])
     return {"ok": True}
 
 
 def admin_notice_del(c, me, b, q):
-    c.execute("DELETE FROM notices WHERE id=?", (b.get("id"),))
+    c.execute("DELETE FROM notices WHERE pid=?", (str(b.get("id") or ""),))
     return {"ok": True}
 
 
@@ -1371,10 +1438,11 @@ def import_sce(c, articles):
         summary = (body.split("\n", 1)[0] if body else "")[:100]
         chips = [{"label": "학과 홈페이지에서 보기", "type": "url", "target": a["url"]}] if re.fullmatch(r"https?://[^\s]{1,500}", a["url"]) else []
         title = ("[%s] %s" % (a["category"], a["title"]) if a["category"] else a["title"])[:100]
-        cur = c.execute("INSERT INTO notices(kind,title,summary,body,chips,on_lobby,author_id,created_at) VALUES('dept',?,?,?,?,0,NULL,?)",
-                        (title, summary, body, json.dumps(chips, ensure_ascii=False), d + "T00:00"))
+        pid = new_pid()
+        c.execute("INSERT INTO notices(pid,kind,title,summary,body,chips,on_lobby,author_id,created_at) VALUES(?,'dept',?,?,?,?,0,NULL,?)",
+                  (pid, title, summary, body, json.dumps(chips, ensure_ascii=False), d + "T00:00"))
         c.execute("INSERT INTO pulled(src,at) VALUES(?,?)", (src, stamp()))
-        fresh.append((cur.lastrowid, "dept", title, summary))
+        fresh.append((pid, "dept", title, summary))
         n += 1
     mail_notices(c, fresh[-5:])
     return n
@@ -1407,7 +1475,7 @@ def sce_loop():
 def admin_users(c, me, b, q):
     """관리자는 회원 목록을 읽기만 한다. 관리자 지정(admin_role)은 최고 관리자만."""
     rows = c.execute("SELECT * FROM users ORDER BY role='user', name").fetchall()
-    return {"users": [dict(user_out(u), created_at=u["created_at"]) for u in rows], "signup_open": signup_open(c)}
+    return {"users": [dict(user_out(u), id=u["id"], created_at=u["created_at"]) for u in rows], "signup_open": signup_open(c)}
 
 
 def admin_dues(c, me, b, q):
@@ -1641,8 +1709,9 @@ def admin_cells(c, me, b, q):
         v = r.get("vals") if isinstance(r, dict) else None
         if not isinstance(v, dict) or not v:
             raise Err(400, "요청을 처리하지 못했습니다. 새로고침한 뒤 다시 시도해 주십시오")
-        table, sets, args = fn(c, r.get("id"), v, me) if fn is edit_users else fn(c, r.get("id"), v)
-        if sets and not c.execute(f"UPDATE {table} SET {', '.join(sets)} WHERE id=?", args + [r.get("id")]).rowcount:
+        rid = id_of(c, b["table"], r.get("id")) if b["table"] in ("events", "notices") else r.get("id")
+        table, sets, args = fn(c, rid, v, me) if fn is edit_users else fn(c, rid, v)
+        if sets and not c.execute(f"UPDATE {table} SET {', '.join(sets)} WHERE id=?", args + [rid]).rowcount:
             raise Err(404, "삭제된 항목이 있습니다. 새로고침해 주십시오")
     return {"ok": True, "n": len(rows)}
 
@@ -1870,7 +1939,7 @@ class H(BaseHTTPRequestHandler):
         q = parse_qs(urlparse(self.path).query)
         uid, kind, sig = (q.get(k, [""])[0] for k in ("u", "k", "t"))
         label = "행사 공지" if kind == "event" else "학과 공지"
-        ok = kind in ("dept", "event") and str(uid).isdigit() and hmac.compare_digest(sig, unsub_sig(uid, kind))
+        ok = unsub_ok(uid, kind, sig)
         if ok and apply:
             c = connect()
             try:

@@ -157,6 +157,9 @@ fields = [{"label": "사이즈", "type": "select", "options": ["S", "M"], "requi
 future = (council.now() + timedelta(days=3)).isoformat(timespec="minutes")
 assert a.call("/api/admin/event_save", {"title": "간식 배부", "deadline": future, "on_lobby": True, "fields": fields})[0] == 200
 eid = b.call("/api/events")[1]["events"][0]["id"]
+assert re.fullmatch(r"[0-9a-f]{16}", eid)                                              # 바깥에는 차례 번호 대신 무작위 번호
+assert b.call("/api/apply", {"event_id": 1, "answers": {}})[0] == 404 and b.call("/api/event?id=1")[0] == 404
+assert "id" not in b.call("/api/me")[1]["user"]
 assert b.call("/api/apply", {"event_id": eid, "answers": {"0": ""}})[0] == 400
 assert b.call("/api/apply", {"event_id": eid, "answers": {"0": "XL"}})[0] == 400
 assert b.call("/api/apply", {"event_id": eid, "answers": {"0": "S", "1": True}})[0] == 200
@@ -207,6 +210,7 @@ ids = {n["title"]: n["id"] for n in a.call("/api/admin/notices")[1]["notices"]}
 assert [n["title"] for n in anon.call("/api/notices")[1]["notices"]] == ["MT 공지"]
 assert anon.call(f"/api/notice?id={ids['수강정정']}")[0] == 401
 assert anon.call("/api/notice?id=9999")[0] == 401
+assert all(re.fullmatch(r"[0-9a-f]{16}", i) for i in ids.values()) and b.call("/api/notice?id=1")[0] == 404
 st, d = anon.call(f"/api/notice?id={ids['학과 배너']}")
 assert st == 200 and d["notice"]["body"] == "배너 본문" and d["notice"]["chips"][1]["type"] == "event"
 assert d["notice"]["event"]["capacity"] is None and d["notice"]["event"]["n"] == 1     # 게이지는 비로그인도
@@ -326,7 +330,7 @@ assert a.call("/api/me")[1]["user"]["role"] == "super"
 assert Client().call("/api/forgot", {"email": "bob@skku.edu"})[0] == 503        # SMTP 미설정
 os.environ["SMTP_HOST"] = "test"
 sent = []
-council.mail_later = lambda to, subj, body: sent.append((to, body))
+council.mail_later = lambda to, subj, body, page=None: sent.append((to, body, page))
 assert Client().call("/api/forgot", {"email": "nobody@skku.edu"}) == (200, {"ok": True}) and not sent
 assert Client().call("/api/forgot", {"email": "BOB@skku.edu"})[0] == 200 and sent[0][0] == "bob@skku.edu" and "bob" in sent[0][1]
 Client().call("/api/forgot", {"email": "bob@skku.edu"})
@@ -467,7 +471,7 @@ ev = [e for e in a.call("/api/admin/events")[1]["events"] if e["title"] == "정�
 assert [f["label"] for f in ev["fields"]] == ["사이즈", "메모", "동의", "간식"] and all(isinstance(f["id"], int) for f in ev["fields"])
 assert b.call("/api/apply", {"event_id": ev["id"], "answers": {"0": "M", "1": "안녕", "2": True, "3": ["음료", "빵"]}})[0] == 200
 with council.connect() as c:
-    rows = [tuple(r) for r in c.execute("""SELECT q.label, a.value FROM answers a JOIN questions q ON q.id=a.question_id WHERE q.event_id=? ORDER BY a.id""", (ev["id"],))]
+    rows = [tuple(r) for r in c.execute("""SELECT q.label, a.value FROM answers a JOIN questions q ON q.id=a.question_id WHERE q.event_id=(SELECT id FROM events WHERE pid=?) ORDER BY a.id""", (ev["id"],))]
     assert rows == [("사이즈", "M"), ("메모", "안녕"), ("동의", "1"), ("간식", "빵"), ("간식", "음료")], rows     # 질문마다 한 줄, 여러 개 고르기는 고른 보기마다 한 줄
     assert "answers" not in {r[1] for r in c.execute("PRAGMA table_info(applications)")} and "fields" not in {r[1] for r in c.execute("PRAGMA table_info(events)")}
 mine = b.call(f"/api/event?id={ev['id']}")[1]["application"]["answers"]
@@ -534,7 +538,7 @@ assert new_user("abc12")[0] == 400 and new_user("a1" * 70)[0] == 400
 assert new_user("abc123")[0] == 200
 print("가입 인증 코드")
 st, code = mail_code("q@skku.edu")
-assert st == 200 and re.fullmatch(r"\d{6}", code) and sent[-1][0] == "q@skku.edu"
+assert st == 200 and re.fullmatch(r"\d{6}", code) and sent[-1][0] == "q@skku.edu" and code in sent[-1][2] and "알림 차단" not in sent[-1][2] and "<!--" not in sent[-1][2]
 assert mail_code("q@skku.edu")[0] == 429                                         # 1분 안 재요청 막음
 assert mail_code("q@gmail.com")[0] == 400                                        # 학교 메일만
 assert mail_code("alice@skku.edu")[0] == 409                                     # 이미 가입된 이메일
@@ -624,6 +628,7 @@ time.sleep(0.3)
 assert len(mails) == 3                                                                 # 고쳐 쓴 공지는 다시 안 보냄
 assert a.call("/api/mail_prefs", {"mail_dept": False})[1]["user"]["mail_dept"] is False
 link = mails[1][4].split(council.PREFIX, 1)[1]
+assert re.search(r"[?&]u=[0-9a-f]{16}&", link) and re.search(r"/#/notice/[0-9a-f]{16}\b", mails[1][2])      # 메일 속 주소에 회원·공지 차례 번호가 없다
 st, page = Client().call(link, raw=True)
 assert st == 200 and "차단할까요" in page.decode() and a.call("/api/me")[1]["user"]["mail_dept"] is False
 a.call("/api/mail_prefs", {"mail_dept": True})

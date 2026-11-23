@@ -15,7 +15,7 @@ const ROUTES = [
   [/^\/items$/, p => <Items {...p} />], [/^\/loans$/, p => <Loans {...p} />], [/^\/reservations$/, p => <Reservations {...p} />],
   [/^\/events$/, p => <Events {...p} />], [/^\/apps$/, p => <Apps {...p} />], [/^\/notices$/, p => <Notices {...p} />],
   [/^\/users$/, p => <Users {...p} />], [/^\/admins$/, p => <Admins {...p} />],
-  [/^\/notice\/(new|\d+)$/, p => <NoticeWrite id={p.m[1]} />], [/^\/event\/(new|\d+)$/, p => <EventWrite id={p.m[1]} />],
+  [/^\/notice\/(new|[0-9a-f]{16})$/, p => <NoticeWrite id={p.m[1]} />], [/^\/event\/(new|[0-9a-f]{16})$/, p => <EventWrite id={p.m[1]} />],
 ];
 
 export default function App() {

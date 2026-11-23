@@ -34,7 +34,7 @@ export default function App() {
   if (!page) setTimeout(() => location.replace('#/items'));
   const nav = <SideNav aria-label="관리 메뉴"
     header={<SideNavHeading heading="SWITCH 관리" subheading="반도체융합공학과 학생회" headingHref="#/items"
-      icon={<NavIcon icon={<span className="logo-dots" aria-hidden="true"><i /><i /></span>} />} />}
+      icon={<NavIcon icon={<span className="logo-mark" aria-hidden="true" />} />} />}
     footer={<SideNavSection title="계정" isHeaderHidden>
       <SideNavItem label="학생 사이트로" icon={ArrowLeft} href="./" />
       <HStack gap={2} vAlign="center" hAlign="between" className="nav-foot"><Text type="supporting" color="secondary" maxLines={1}>{me.name} ({ROLE[me.role]})</Text><ThemeButton /></HStack>

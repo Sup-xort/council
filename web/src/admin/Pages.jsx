@@ -1,6 +1,6 @@
 // 관리 사이트 화면들 (글쓰기 둘은 Write.jsx)
 import {useRef, useState} from 'react';
-import {Card, Heading, Text, HStack, VStack, Grid, Button, TextInput, Selector, Badge, Banner, List, ListItem, EmptyState, Skeleton} from '../ui/ax.js';
+import {Card, Heading, Text, HStack, VStack, Grid, Button, TextInput, Selector, Badge, Banner, List, ListItem, EmptyState, Skeleton, Switch} from '../ui/ax.js';
 import {Plus, Printer} from 'lucide-react';
 import {api, toast, josa, iso, koDate, koTime, koRange, koStamp, koSpan, toDate} from '../lib/common.js';
 import {useAsk, useLoad} from '../ui/base.jsx';
@@ -290,11 +290,13 @@ export function Users({path}) {
   const paid = d.users.filter(u => u.dues).length;
   return <Page>
     <Head title="회원" desc={`${d.users.length}명 중 ${paid}명이 학생회비를 납부했습니다. 표 위의 수정을 누르면 칸을 바로 고칠 수 있습니다. 관리자 지정은 ‘관리자’ 메뉴에서 합니다.`} />
+    <Card padding={4}><Switch label="새 회원 가입 받기" description={d.signup_open ? '켜져 있습니다. 학생이 가입 화면에서 직접 가입할 수 있습니다.' : '꺼져 있습니다. 로그인 화면에 회원가입 버튼이 보이지 않습니다.'} value={d.signup_open}
+      onChange={async v => { try { await api('admin/signup', {open: v}); toast(v ? '가입을 받기 시작했습니다' : '가입을 받지 않습니다'); reload(); } catch {} }} /></Card>
     <DataTable path={path} rows={d.users} onSave={saver('users', reload)}
       columns={[
         {k: 'name', label: '이름', title: true, edit: 'text'}, {k: 'student_id', label: '학번', edit: 'text'},
         {k: 'dues', label: '학생회비 납부', filter: 'choice', edit: 'check', val: r => r.dues ? '납부' : '미납부', cell: r => <Check on={r.dues} label={r.dues ? '납부' : '미납부'} />},
-        {k: 'username', label: '아이디', edit: 'text'}, {k: 'email', label: '이메일', edit: 'text'},
+        {k: 'username', label: '아이디', edit: 'text'}, {k: 'email', label: '이메일', edit: 'text'}, {k: 'phone', label: '전화번호', edit: 'text'},
         {k: 'role', label: '권한', filter: 'choice', val: r => ROLE[r.role], cell: r => r.role === 'user' ? '학생' : <Tag tone="ok">{ROLE[r.role]}</Tag>},
         {k: 'created_at', label: '가입일자', type: 'date', period: true, edit: 'datetime'},
       ]} />

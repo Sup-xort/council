@@ -31,7 +31,7 @@ export function Gauge({g, big}) {
       <Text type={big ? 'display-3' : 'supporting'} weight="semibold">{n}명 <Text type="supporting" color="secondary">신청</Text></Text>
       <Text type="supporting" color="secondary">{right}</Text>
     </HStack>
-    <ProgressBar label="신청 인원" isLabelHidden value={cap == null ? 1 : Math.min(n, cap)} max={cap == null ? 1 : cap} variant={cap == null ? 'success' : 'accent'} />
+    {cap != null && <ProgressBar label="신청 인원" isLabelHidden value={Math.min(n, cap)} max={cap} variant="accent" />}
   </VStack>;
 }
 
@@ -44,7 +44,7 @@ export function EventsList({list}) {
     {open.map(e => {
       const g = e.gauge, st = e.applied ? '신청함' : g.full ? '정원 마감' : '모집 중';
       return <Card key={e.id} padding={5}><VStack gap={3}>
-        <HStack gap={1} wrap="wrap"><DDay date={e.deadline} closed={e.closed} /><State st={st} /><Badge variant="neutral" label={`${koDate(e.deadline)} 마감`} />
+        <HStack gap={1} wrap="wrap"><DDay date={e.deadline} closed={e.closed} /><State st={st} />{!dday(e.deadline) && <Badge variant="neutral" label={`${koDate(e.deadline)} 마감`} />}
           {e.dues_only && <Badge variant="neutral" label="납부자만" />}</HStack>
         <VStack gap={1}><Heading level={3}>{e.title}</Heading>
           {e.starts_at && <Text type="supporting" color="secondary">{koWhen(e.starts_at)}</Text>}</VStack>
@@ -78,6 +78,8 @@ export function PageHead({back, meta, title, desc, end}) {
     {desc && <Text color="secondary">{desc}</Text>}
   </VStack>;
 }
+
+export const SEMINAR = false;   // 세미나실 기능을 숨기는 스위치. true 로 바꾸면 다시 나타난다
 
 // 공지 아래 바로가기 버튼이 가는 곳
 const TABLINK = {home: '#/', notices: '#/notices', events: '#/events', reserve: '#/reserve', loans: '#/items'};

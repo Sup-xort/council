@@ -5,9 +5,7 @@
   .rule-in { flex: 1 1 96px; min-width: 96px; } .nw { white-space: nowrap; }
   button, a { overflow-wrap: normal; }
   .gate { min-height: 100vh; }
-  .logo-dots { display: inline-flex; flex-direction: column; gap: 3px; }
-  .logo-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
-  .logo-dots i + i { background: var(--mine); }
+  .logo-mark { display: block; height: 22px; aspect-ratio: 480 / 258; background: var(--color-accent); -webkit-mask: url(../ui/logo.png) center / contain no-repeat; mask: url(../ui/logo.png) center / contain no-repeat; }
   .nav-foot { padding: var(--spacing-1, 4px) var(--spacing-2, 8px); }
 
   /* 표 */

@@ -40,7 +40,7 @@ PDF 의 QR 은 벡터 사각형이라 해상도가 없다. 기본 2cm(모듈 0.6
 
 ## 로그인 유지
 
-쿠키 `scene_sid` (HttpOnly·Secure·SameSite=Lax, Path=/council/), 90일. 앱을 열 때마다(`api/me`) 다시 90일로 늘어난다.
+쿠키 `scene_sid` (HttpOnly·Secure·SameSite=Lax, Path=/council/), 400일(브라우저 허용 최대치). 앱을 열 때마다(`api/me`) 다시 400일로 늘어난다.
 
 ## 비밀번호 · 찾기
 

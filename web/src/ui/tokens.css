@@ -1,5 +1,7 @@
 /* Astryx 위에 학생회 색을 덮는다. 순서가 중요하다: 기본 → Astryx 부품 → Astryx 테마 → 우리 것 */
 @layer reset, astryx-base, astryx-theme, switch;
+@import '@fontsource-variable/google-sans-flex/wght.css';
+@import '@fontsource-variable/noto-sans-kr/wght.css';
 @import '@astryxdesign/core/reset.css';
 @import '@astryxdesign/core/astryx.css';
 @import '@astryxdesign/theme-neutral/theme.css';
@@ -18,8 +20,11 @@
 }
 
 @layer switch {
+  .astryx-button, .astryx-text-input, .astryx-number-input, .astryx-date-input, .astryx-date-time-input, .astryx-date-range-input, .astryx-complex-selector, .astryx-multi-selector, .astryx-typeahead {
+    --size-element-sm: 30px; --size-element-md: 36px; --size-element-lg: 42px;
+  }
   [data-astryx-theme] {
-    --font-family-body: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", Pretendard, "Pretendard Variable", "Noto Sans KR", sans-serif;
+    --font-family-body: "Noto Sans KR Variable", "Google Sans Flex Variable", "Apple SD Gothic Neo", sans-serif;
     --font-family-heading: var(--font-family-body);
 
     --color-accent: light-dark(#5B4545, #EADFDD);

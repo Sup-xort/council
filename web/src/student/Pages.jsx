@@ -1,11 +1,11 @@
 // 대여 · 행사 · 공지
-import {useEffect, useRef, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {Card, ClickableCard, Badge, Heading, Text, HStack, VStack, Grid, Button, Banner, EmptyState, MetadataList, MetadataListItem,
   TextInput, TextArea, Selector, CheckboxInput, RadioList, RadioListItem, CheckboxList, CheckboxListItem,
-  SegmentedControl, SegmentedControlItem, List, ListItem, Link} from '../ui/ax.js';
-import {ChevronRight, ChevronLeft, ExternalLink} from 'lucide-react';
+  SegmentedControl, SegmentedControlItem, List, ListItem, Link, Switch} from '../ui/ax.js';
+import {Check, ChevronRight, ChevronLeft, ExternalLink} from 'lucide-react';
 import {api, md, koDate, koWhen, koStamp, koSpan, toDate, toast} from '../lib/common.js';
-import {useLoad} from '../ui/base.jsx';
+import {useLoad, useAsk} from '../ui/base.jsx';
 import {useMe, State, DDay, Gauge, EventsList, Md, Loading, PageHead, chipHref} from './parts.jsx';
 
 // ── 대여 ──────────────────────────────────────────────────────────────
@@ -58,31 +58,24 @@ function Field({f, value, onChange, disabled}) {
   return <TextInput {...common} value={value} onChange={onChange} size="lg" />;
 }
 
-export function Event({id, q}) {
-  const {me, isAdmin} = useMe();
-  const {data, reload} = useLoad(() => api('event?id=' + id), [id]);
-  const [vals, setVals] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const box = useRef(null);
-  useEffect(() => {
-    if (!data) return;
-    const app = data.application, v = {};
-    data.event.fields.forEach((f, i) => { const x = app?.answers?.[i]; v[i] = f.type === 'checkbox' ? !!x : f.type === 'multi' ? (Array.isArray(x) ? [...x] : []) : (x ?? ''); });
-    setVals(v);
-  }, [data]);
-  useEffect(() => { if (vals && q.get('apply')) box.current?.scrollIntoView({behavior: 'smooth'}); }, [!!vals]);
-  if (!data || !vals) return <div className="narrow"><Loading rows={[100, 120, 300]} /></div>;
-
+function lockOf(data, me) {
   const e = data.event, g = data.gauge, app = data.application;
-  const state = e.closed ? '마감' : app ? '신청함' : g.full ? '정원 마감' : '모집 중';
   const duesLock = e.dues_only && !me.dues && !app;      // 학생회비를 낸 학생만 받는 행사
   const locked = e.closed || (g.full && !app) || duesLock;
-  const ok = e.fields.every((f, i) => !f.required || (f.type === 'checkbox' ? vals[i] : f.type === 'multi' ? vals[i].length : String(vals[i]).trim()));
-  const submit = async ev => {
-    ev.preventDefault(); if (!ok || locked) return;
-    setBusy(true);
-    try { await api('apply', {event_id: e.id, answers: vals}); toast(app ? '수정했습니다' : '신청했습니다'); reload(); } catch {} finally { setBusy(false); }
-  };
+  const banner = locked && <Banner status={duesLock ? 'warning' : 'info'} title={e.closed ? '신청이 마감됐습니다' : duesLock ? '학생회비 납부자만 신청할 수 있습니다' : '정원이 찼습니다'}
+    description={e.closed ? (app ? '신청한 내용은 신청서에서 볼 수 있습니다.' : undefined) : duesLock ? '납부했는데 이 글이 보이면 학생회에 알려 주십시오.' : '더 이상 신청할 수 없습니다.'} />;
+  return {locked, banner};
+}
+
+export function Event({id, q}) {
+  const {me, isAdmin} = useMe();
+  const {data} = useLoad(() => api('event?id=' + id), [id]);
+  const lk = data && lockOf(data, me);
+  useEffect(() => { if (lk && q.get('apply') && !lk.locked) location.replace(`#/event/${id}/apply`); }, [!!data]);
+  if (!data) return <div className="narrow"><Loading rows={[100, 120, 300]} /></div>;
+  const e = data.event, g = data.gauge, app = data.application;
+  const state = e.closed ? '마감' : app ? '신청함' : g.full ? '정원 마감' : '모집 중';
+  const goApply = `#/event/${e.id}/apply`;
   return <div className="narrow enter"><VStack gap={4}>
     <PageHead back={['#/events', '행사 목록']} title={e.title}
       meta={<><State st={state} /><DDay date={e.deadline} closed={e.closed} /><Text type="supporting" color="secondary">{koDate(e.deadline)} 마감</Text></>}
@@ -95,18 +88,65 @@ export function Event({id, q}) {
     </MetadataList></Card>
     {(e.body.trim() || data.notice_id) && <Card padding={5}><VStack gap={3}><Md html={md(e.body)} />
       {data.notice_id && <div><Button label="공지 전체 보기" variant="ghost" size="sm" href={`#/notice/${data.notice_id}`} endContent={<ChevronRight size={14} />} /></div>}</VStack></Card>}
-    <div ref={box}><Card padding={5}><form onSubmit={submit}><VStack gap={5}>
-      <Heading level={2}>신청서</Heading>
+    <Card padding={5}><VStack gap={4}>
+      {app && <Banner status="success" title="신청돼 있습니다" description={e.closed ? '신청이 마감됐습니다.' : '마감 전까지 수정하거나 취소할 수 있습니다.'} />}
+      {lk.banner}
+      {app ? <Button variant={lk.locked ? 'secondary' : 'primary'} size="lg" width="100%" href={goApply} label={lk.locked ? '신청 내용 보기' : '신청 내용 수정·취소'} />
+        : !lk.locked && <Button variant="primary" size="lg" width="100%" href={goApply} label="신청서 쓰기" />}
+    </VStack></Card>
+  </VStack></div>;
+}
+
+export function EventApply({id}) {
+  const {me} = useMe();
+  const ask = useAsk();
+  const {data} = useLoad(() => api('event?id=' + id), [id]);
+  const [vals, setVals] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!data) return;
+    const app = data.application, v = {};
+    data.event.fields.forEach((f, i) => { const x = app?.answers?.[i]; v[i] = f.type === 'checkbox' ? !!x : f.type === 'multi' ? (Array.isArray(x) ? [...x] : []) : (x ?? ''); });
+    setVals(v);
+  }, [data]);
+  if (!data || !vals) return <div className="narrow"><Loading rows={[100, 120, 300]} /></div>;
+
+  const e = data.event, app = data.application, {locked, banner} = lockOf(data, me);
+  const back = `#/event/${e.id}`;
+  const ok = e.fields.every((f, i) => !f.required || (f.type === 'checkbox' ? vals[i] : f.type === 'multi' ? vals[i].length : String(vals[i]).trim()));
+  const cancel = async () => {
+    if (!await ask.confirm('신청을 취소하시겠습니까?', {actionLabel: '신청 취소', danger: true})) return;
+    setBusy(true);
+    try { await api('apply_cancel', {event_id: e.id}); toast('신청을 취소했습니다'); location.hash = back; } catch {} finally { setBusy(false); }
+  };
+  const submit = async ev => {
+    ev.preventDefault(); if (!ok || locked) return;
+    setBusy(true);
+    try { await api('apply', {event_id: e.id, answers: vals}); toast(app ? '수정했습니다' : '신청했습니다'); location.hash = back; } catch {} finally { setBusy(false); }
+  };
+  return <div className="narrow enter apply"><form onSubmit={submit}><VStack gap={3}>
+    <PageHead back={[back, e.title]} title="신청서" desc={e.title} />
+    <Card padding={5}><VStack gap={3}>
       <MetadataList columns="single"><MetadataListItem label="신청자">{me.name} · {me.student_id}</MetadataListItem></MetadataList>
       <Text type="supporting" color="secondary">이름·학번·이메일은 계정에서 자동으로 들어갑니다.</Text>
-      {e.fields.map((f, i) => <Field key={f.id ?? i} f={f} value={vals[i]} disabled={locked} onChange={v => setVals(o => ({...o, [i]: v}))} />)}
-      {app && <Banner status="success" title="신청돼 있습니다" description="마감 전까지 수정할 수 있습니다." />}
-      {locked ? <Banner status={duesLock ? 'warning' : 'info'} title={e.closed ? '신청이 마감됐습니다' : duesLock ? '학생회비 납부자만 신청할 수 있습니다' : '정원이 찼습니다'}
-        description={e.closed ? (app ? '신청한 내용은 위와 같습니다.' : undefined) : duesLock ? '납부했는데 이 글이 보이면 학생회에 알려 주십시오.' : '더 이상 신청할 수 없습니다.'} />
-        : <Button type="submit" variant="primary" size="lg" width="100%" isDisabled={!ok} isLoading={busy}
-          label={ok ? (app ? '신청 내용 수정' : '참여 신청') : '필수 질문에 답해 주십시오'} />}
-    </VStack></form></Card></div>
-  </VStack></div>;
+    </VStack></Card>
+    {e.fields.map((f, i) => {
+      const x = vals[i], done = f.type === 'checkbox' ? !!x : f.type === 'multi' ? x.length > 0 : !!String(x).trim();
+      return <Card key={f.id ?? i} padding={5} className={done ? 'q done' : 'q'}><VStack gap={3}>
+        <HStack gap={2} vAlign="center"><span className="qn">{done ? <Check size={14} strokeWidth={3} /> : i + 1}</span>
+          <Text type="supporting" color="secondary">질문 {i + 1} / {e.fields.length} · {f.required ? '필수' : '선택'}</Text></HStack>
+        <Field f={f} value={x} disabled={locked} onChange={v => setVals(o => ({...o, [i]: v}))} />
+      </VStack></Card>;
+    })}
+    <Card padding={5}><VStack gap={4}>
+      {app && !locked && <Banner status="success" title="신청돼 있습니다" description="마감 전까지 수정하거나 취소할 수 있습니다." />}
+      {banner}
+      {!locked && <Button type="submit" variant="primary" size="lg" width="100%" isDisabled={!ok} isLoading={busy}
+        label={ok ? (app ? '신청 내용 수정' : '참여 신청') : '필수 질문에 답해 주십시오'} />}
+      {app && !locked && <Button label="신청 취소" variant="secondary" size="lg" width="100%" isDisabled={busy} onClick={cancel} />}
+      {locked && <Button label="행사로 돌아가기" variant="secondary" size="lg" width="100%" href={back} />}
+    </VStack></Card>
+  </VStack></form></div>;
 }
 
 // ── 공지 ──────────────────────────────────────────────────────────────
@@ -162,5 +202,22 @@ export function Notice({id}) {
       {data.prev && <ListItem label={data.prev.title} description="이전 글" startContent={<ChevronLeft size={16} />} onClick={() => { location.hash = `#/notice/${data.prev.id}`; }} />}
       {data.next && <ListItem label={data.next.title} description="다음 글" startContent={<ChevronRight size={16} />} onClick={() => { location.hash = `#/notice/${data.next.id}`; }} />}
     </List></Card>}
+  </VStack></div>;
+}
+
+export function Settings() {
+  const {me, setMe} = useMe();
+  const [busy, setBusy] = useState('');
+  const set = async (k, v) => {
+    setBusy(k);
+    try { const d = await api('mail_prefs', {[k]: v}); setMe(d.user); toast(v ? '메일을 받도록 바꿨습니다' : '메일을 받지 않도록 바꿨습니다'); }
+    catch {} finally { setBusy(''); }
+  };
+  return <div className="narrow"><VStack gap={4}>
+    <PageHead title="설정" desc="새 공지가 올라오면 가입한 이메일로 알려 드립니다." />
+    <Card padding={5}><VStack gap={4} hAlign="stretch">
+      <Switch label="학과 공지 메일" description={`${me.email} 로 받습니다`} value={me.mail_dept} isDisabled={busy === 'mail_dept'} onChange={v => set('mail_dept', v)} />
+      <Switch label="행사 공지 메일" description="새 행사 공지가 올라올 때만 받습니다" value={me.mail_event} isDisabled={busy === 'mail_event'} onChange={v => set('mail_event', v)} />
+    </VStack></Card>
   </VStack></div>;
 }

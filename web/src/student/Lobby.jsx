@@ -4,10 +4,12 @@ import {Card, Heading, Text, HStack, VStack, Button, IconButton, Link, Segmented
 import {ChevronLeft, ChevronRight} from 'lucide-react';
 import {api, addDays, toDate, koDate, koTime, koWhen, dday, wd, WD, toast} from '../lib/common.js';
 import {useLoad} from '../ui/base.jsx';
-import {useMe, goLogin, EventsList, chipHref} from './parts.jsx';
+import {useMe, goLogin, EventsList, chipHref, SEMINAR} from './parts.jsx';
+import {useNarrow} from '../ui/narrow.js';
 
 export const days7 = start => [...Array(7)].map((_, i) => addDays(start, i));
 export const HOURS = [...Array(24)].map((_, i) => i);          // 0시~23시 칸 (끝은 24시)
+export const DAY_FROM = 8;                                      // 시간표는 기본으로 8시부터 보인다
 export const rangeLabel = days => `${koDate(days[0]).replace(/ \(.\)$/, '')} – ${days[0].slice(5, 7) === days[6].slice(5, 7) ? `${+days[6].slice(8)}일` : koDate(days[6]).replace(/ \(.\)$/, '')}`;
 export const whoMsg = (d, h, who) => `${koDate(d)} ${koTime(h)}는 ${who === '내 예약' ? '내가 예약한 시간입니다' : `${who} 님이 예약했습니다`}`;
 export function Legend({extra}) {
@@ -63,14 +65,14 @@ function BannerArt({b}) {
   let date = null;
   if (ev) {
     const s = b.starts_at || b.event.deadline, d = toDate(s), dd = dday(b.event.deadline);
-    date = <div className="date"><small>{d.getMonth() + 1}월 {WD[d.getDay()]}요일{b.starts_at ? '' : ' 마감'}</small><b>{d.getDate()}</b>{dd && !b.event.closed && <em>마감 {dd}</em>}</div>;
+    date = <div className="date"><small>{d.getMonth() + 1}월{b.starts_at ? '' : ' 마감'}</small><b>{d.getDate()}</b><small className="wd">{WD[d.getDay()]}요일</small>{dd && !b.event.closed && <em>마감 {dd}</em>}</div>;
   }
   return <div className="art" aria-hidden="true"><svg viewBox="0 0 320 220" preserveAspectRatio="xMidYMid slice">{g}</svg>{date}</div>;
 }
 function Banner({b}) {
   const g = b.event, ev = b.type === 'event';
   const label = ev ? `행사 ${g.closed ? '마감' : g.full ? '정원 마감' : '모집 중'}` : (b.kind === 'dept' ? '학과 공지' : '행사 공지');
-  const sub = ev ? [b.starts_at && `${koWhen(b.starts_at)} 시작`, `${koDate(g.deadline)} 마감`].filter(Boolean).join(', ') : b.summary;
+  const sub = ev ? (b.starts_at ? `${koWhen(b.starts_at)} 시작` : `${koDate(g.deadline)} 마감`) : b.summary;
   const chip = (b.chips || [])[0];
   return <>
     <VStack gap={3} className="bn-text">
@@ -120,7 +122,7 @@ function WeekGrid({w, days, room, me}) {
     if (!me) return goLogin();
     location.hash = `#/reserve?room=${room}&date=${d}&hour=${hr}`;
   };
-  return <div className="grid-rows">{HOURS.map(hr => <div className="wk" key={hr}><span className="hh">{hr}시</span>
+  return <div className="grid-rows">{HOURS.filter(hr => hr >= DAY_FROM).map(hr => <div className="wk" key={hr}><span className="hh">{hr}시</span>
     {days.map(d => {
       const r = map[d + '|' + hr], past = d < today || (d === today && hr < nowH);
       return r ? <button key={d} className={'c ' + (r.mine ? 'mine' : 'busy')} onClick={() => click(d, hr, r)} aria-label={`${koDate(d)} ${koTime(hr)} ${r.mine ? '내 예약' : '예약됨'}`} />
@@ -129,19 +131,39 @@ function WeekGrid({w, days, room, me}) {
     })}</div>)}</div>;
 }
 
+function DayBar({name, w, room}) {
+  const today = w.now.slice(0, 10), nowH = +w.now.slice(11, 13) + +w.now.slice(14, 16) / 60, map = {};
+  w.reservations.filter(r => r.room_id === room && r.date === today).forEach(r => { map[r.hour] = r; });
+  return <VStack gap={1}>
+    <Text weight="semibold">{name}</Text>
+    <div className="daybar" role="img" aria-label={`${name} 오늘 예약 현황`}>
+      {HOURS.map(h => <i key={h} className={map[h] ? (map[h].mine ? 'mine' : 'busy') : ''} />)}
+      <b style={{left: `${nowH / 24 * 100}%`}} />
+    </div>
+    <div className="daybar-t"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>
+  </VStack>;
+}
+
 const keep = {room: null, start: null};   // 화면을 옮겨 다녀도 고른 방·주는 기억한다
 export default function Lobby() {
-  const {me} = useMe();
+  const {me} = useMe(), narrow = useNarrow();
   const [start, setStart] = useState(keep.start), [room, setRoom] = useState(keep.room);
   keep.start = start; keep.room = room;
-  const {data} = useLoad(() => Promise.all([api('banners'), api('week' + (start ? '?start=' + start : '')), api('events')]), [start]);
+  const {data} = useLoad(() => Promise.all([api('banners'), SEMINAR ? api('week' + (start ? '?start=' + start : '')) : null, api('events')]), [start]);
   if (!data) return <VStack gap={6}><Skeleton height={248} /><div className="lobby"><Skeleton height={480} /><Skeleton height={300} index={1} /></div></VStack>;
   const [{banners}, w, ev] = data;
-  const rm = room || w.rooms[0].id, days = days7(w.start);
+  const rm = w && (room || w.rooms[0].id), days = w && days7(w.start);
   return <VStack gap={6} className="enter">
     <Carousel list={banners} />
-    <div className="lobby">
-      <section className="room"><VStack gap={3}>
+    <div className={SEMINAR ? 'lobby' : 'lobby solo'}>
+      {!SEMINAR ? null : narrow ? <section className="room"><VStack gap={3}>
+        <HStack hAlign="between" vAlign="center"><Heading level={2}>세미나실</Heading><Button label="예약하기" variant="ghost" size="sm" href={me ? '#/reserve' : '#/login'} endContent={<ChevronRight size={14} />} /></HStack>
+        <Card padding={4}><VStack gap={4}>
+          <Text type="supporting" color="secondary">오늘 {koDate(w.now.slice(0, 10))}</Text>
+          {w.rooms.map(r => <DayBar key={r.id} name={r.name} w={w} room={r.id} />)}
+          <Legend /></VStack></Card>
+      </VStack></section>
+      : <section className="room"><VStack gap={3}>
         <HStack hAlign="between" vAlign="end"><Heading level={2}>세미나실</Heading><Text type="supporting" color="secondary">{rangeLabel(days)}</Text></HStack>
         <HStack gap={2} vAlign="center"><div style={{flex: 1, minWidth: 0}}><RoomPick rooms={w.rooms} room={rm} onChange={setRoom} /></div>
           <WeekNav onPrev={() => setStart(addDays(w.start, -7))} onToday={() => setStart(null)} onNext={() => setStart(addDays(w.start, 7))} /></HStack>
@@ -150,7 +172,7 @@ export default function Lobby() {
           <WeekGrid w={w} days={days} room={rm} me={me} />
           <Legend /></VStack></Card>
         {!me && <Text type="supporting" color="secondary" justify="center">예약·대여·행사 신청은 <Link href="#/login">로그인</Link> 후 이용할 수 있습니다</Text>}
-      </VStack></section>
+      </VStack></section>}
       <section className="ev-sec"><VStack gap={3}>
         <HStack hAlign="between" vAlign="center"><Heading level={2}>행사</Heading><Button label="전체 보기" variant="ghost" size="sm" href="#/events" endContent={<ChevronRight size={14} />} /></HStack>
         <EventsList list={ev.events.slice(0, 6)} />

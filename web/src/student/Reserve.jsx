@@ -1,22 +1,23 @@
 // 세미나실 예약: 칸을 누르거나 누른 채로 끌어서 여러 시간을 고른다
 import {useEffect, useMemo, useRef, useState} from 'react';
 import {Card, Heading, Text, HStack, VStack, Button, List, ListItem, EmptyState} from '../ui/ax.js';
-import {api, iso, addDays, koDate, koDay, koRange, toast} from '../lib/common.js';
+import {api, iso, addDays, toDate, wd, koDate, koDay, koRange, toast} from '../lib/common.js';
 import {useAsk, useLoad} from '../ui/base.jsx';
+import {useNarrow} from '../ui/narrow.js';
 import {Loading} from './parts.jsx';
-import {days7, HOURS, rangeLabel, whoMsg, Legend, DayHead, WeekNav, RoomPick} from './Lobby.jsx';
+import {days7, HOURS, DAY_FROM, rangeLabel, whoMsg, Legend, DayHead, WeekNav, RoomPick} from './Lobby.jsx';
 
 const mondayOf = d => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() - (t.getUTCDay() + 6) % 7); return t.toISOString().slice(0, 10); };
 
 export default function Reserve({q}) {
-  const ask = useAsk();
+  const ask = useAsk(), narrow = useNarrow();
   const today = iso(new Date());
   const [room, setRoom] = useState(+q.get('room') || null);
   const [day, setDay] = useState(q.get('date') || today);
   // 넘겨받은 날이 오늘부터 7일 안이면 오늘부터, 밖이면 그날부터 보인다
   const [wstart, setWstart] = useState(() => { const d = q.get('date') || today; return d < today ? today : d > addDays(today, 6) ? d : today; });
   const [sel, setSel] = useState(() => new Set(q.get('hour') ? [+q.get('hour')] : []));
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(false), [early, setEarly] = useState(false);
   const {data, reload} = useLoad(() => Promise.all([api('week?start=' + wstart), api('my_reservations')]), [wstart]);
   const anchor = useRef(null), gridRef = useRef(null), scrolled = useRef(false);
 
@@ -85,18 +86,33 @@ export default function Reserve({q}) {
     <Card padding={4}><VStack gap={4}>
       <Heading level={1}>세미나실 예약</Heading>
       <RoomPick rooms={w.rooms} room={rm} onChange={v => { setRoom(v); reset(); }} />
-      <HStack hAlign="between" vAlign="center" gap={2}><Text type="large" weight="semibold">{rangeLabel(days)}</Text>
+      <HStack hAlign="between" vAlign="center" gap={2}><Text type="large" weight="semibold" className="nowrap">{narrow ? koDate(dsel) : rangeLabel(days)}</Text>
         <WeekNav onPrev={() => shift(-7)} onToday={() => { setWstart(today); setDay(today); reset(); }} onNext={() => shift(7)} /></HStack>
+      {narrow ? <>
+        <div className="daystrip" role="group" aria-label="날짜 고르기">{days.map(d => {
+          const past = d < nowD;
+          return <button key={d} type="button" aria-pressed={d === dsel} disabled={past} className={(d === dsel ? 'on ' : '') + (toDate(d).getDay() === 0 ? 'sun' : '')} onClick={() => { setDay(d); reset(); }}>
+            <small>{wd(d)}</small><b>{+d.slice(8)}</b></button>;
+        })}</div>
+        <div className="tt" ref={gridRef} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+          {HOURS.filter(hr => early || hr >= DAY_FROM).map(hr => {
+            const r = taken[dsel + '|' + hr];
+            const cls = r ? (r.mine ? 'mine' : 'busy') : isPast(dsel, hr) ? 'past' : sel.has(hr) ? 'sel' : '';
+            const txt = r ? (r.mine ? '내 예약' : `${r.who} 님 예약`) : cls === 'past' ? '지남' : cls === 'sel' ? '선택함' : '예약 가능';
+            return <div key={hr} className={'tc row ' + cls} data-d={dsel} data-h={hr}><span>{koRange(hr, hr + 1)}</span><em>{txt}</em></div>;
+          })}
+        </div></> :
       <div>
         <DayHead days={days} today={nowD} />
         <div className="tt" ref={gridRef} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
-          {HOURS.map(hr => <div className="wk" key={hr}><span className="hh">{hr}시</span>{days.map(d => {
+          {HOURS.filter(hr => early || hr >= DAY_FROM).map(hr => <div className="wk" key={hr}><span className="hh">{hr}시</span>{days.map(d => {
             const r = taken[d + '|' + hr];
             const cls = r ? (r.mine ? 'mine' : 'busy') : isPast(d, hr) ? 'past' : d === dsel && sel.has(hr) ? 'sel' : '';
             return <div key={d} className={'tc ' + cls} data-d={d} data-h={hr} />;
           })}</div>)}
         </div>
-      </div>
+      </div>}
+      <div><Button label={early ? `0~${DAY_FROM}시 접기` : `0~${DAY_FROM}시 보기`} variant="ghost" size="sm" onClick={() => setEarly(!early)} /></div>
       <Legend extra="누른 채로 끌면 여러 시간을 한 번에 고릅니다" />
       {hs.length > 0 && <div className="act">
         <Text weight="semibold" className="act-n"><span className={over ? 'over' : ''}>{total}</span>{cap > 0 ? `/${cap}` : ''}시간</Text>

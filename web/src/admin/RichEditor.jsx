@@ -1,9 +1,6 @@
 // 보이는 대로 쓰는 편집기 — 저장은 서식 기호(마크다운)로 하지만 쓰는 사람에겐 보이지 않는다.
 // 글자 편집은 브라우저의 contenteditable 이 하고, React 는 틀만 잡는다 (React 가 글 안을 다시 그리면 커서가 튄다).
 import {useEffect, useImperativeHandle, useRef, useState} from 'react';
-import {Button} from '@astryxdesign/core/Button';
-import {ToggleButton} from '@astryxdesign/core/ToggleButton';
-import {Banner} from '@astryxdesign/core/Banner';
 import {Heading1, Heading2, Bold, Italic, List as ListIc, ListOrdered, Quote, Link2, ImagePlus, Minus} from 'lucide-react';
 import {md, esc, koStamp, toast, INVISIBLE, IMG_SRC, safeUrl} from '../lib/common.js';
 import {useAsk} from '../ui/base.jsx';
@@ -194,15 +191,14 @@ export default function RichEditor({ref, value = '', draftKey = '', max = 20000,
 
   const drop = useLoadDraft => { holdDraft.current = false; if (useLoadDraft) load(draft.body); else try { localStorage.removeItem(draftKey); } catch {} setDraft(null); changed(); };
   return <div className="re">
-    {draft && <Banner status="info" container="section" title={`${koStamp(draft.at)}에 저장하지 않고 나간 글이 있습니다`}
-      endContent={<><Button label="그 글 불러오기" size="sm" variant="primary" onClick={() => drop(true)} /><Button label="버리기" size="sm" variant="secondary" onClick={() => drop(false)} /></>} />}
+    {draft && <div className="re-draft" role="status"><span className="grow">{koStamp(draft.at)}에 저장하지 않고 나간 글이 있습니다</span>
+      <button type="button" className="pb" onClick={() => drop(true)}>그 글 불러오기</button><button type="button" className="pb soft" onClick={() => drop(false)}>버리기</button></div>}
     <div className="re-bar" role="toolbar" aria-label="서식" onPointerDown={e => { if (e.target.closest('button')) e.preventDefault(); }}>
       {BAR.map((b, i) => {
         if (b === '|') return <span key={i} className="sep" aria-hidden="true" />;
-        const Ic = IC[b[0]], icon = <Ic size={16} />;
-        return TOGGLE.has(b[0])
-          ? <ToggleButton key={b[0]} label={b[1]} size="sm" icon={icon} isPressed={!!pressed[b[0]]} onPressedChange={() => run(b[0])} />
-          : <Button key={b[0]} label={b[1]} size="sm" variant="ghost" icon={icon} onClick={() => run(b[0])} />;
+        const Ic = IC[b[0]];
+        return <button key={b[0]} type="button" aria-label={b[1]} title={b[1]} aria-pressed={TOGGLE.has(b[0]) ? !!pressed[b[0]] : undefined}
+          className={pressed[b[0]] ? 'on' : undefined} onClick={() => run(b[0])}><Ic size={16} aria-hidden="true" /></button>;
       })}
     </div>
     <div ref={el} className="re-body md" contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label="본문" data-ph={placeholder} />

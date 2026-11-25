@@ -1,38 +1,30 @@
-// 로비: 폰은 배너 → 행사 → 세미나실, 넓은 화면은 세미나실과 행사를 나란히
+// 로비: 배너 → 행사 (세미나실을 켜면 넓은 화면에서 세미나실과 행사를 나란히)
 import {useEffect, useRef, useState} from 'react';
-import {Card, Heading, Text, HStack, VStack, Button, IconButton, Link, SegmentedControl, SegmentedControlItem, Skeleton} from '../ui/ax.js';
 import {ChevronLeft, ChevronRight} from 'lucide-react';
 import {api, addDays, toDate, koDate, koTime, koWhen, dday, wd, WD, toast} from '../lib/common.js';
-import {useLoad} from '../ui/base.jsx';
+import {useLoad, useMQ} from '../ui/base.jsx';
+import {Rb, Seg, Legend as LegendBase, More, Loading} from '../ui/kit.jsx';
+import {IcNext} from '../ui/icons.jsx';
 import {useMe, goLogin, EventsList, chipHref, SEMINAR} from './parts.jsx';
-import {useNarrow} from '../ui/narrow.js';
 
 export const days7 = start => [...Array(7)].map((_, i) => addDays(start, i));
 export const HOURS = [...Array(24)].map((_, i) => i);          // 0시~23시 칸 (끝은 24시)
 export const DAY_FROM = 8;                                      // 시간표는 기본으로 8시부터 보인다
 export const rangeLabel = days => `${koDate(days[0]).replace(/ \(.\)$/, '')} – ${days[0].slice(5, 7) === days[6].slice(5, 7) ? `${+days[6].slice(8)}일` : koDate(days[6]).replace(/ \(.\)$/, '')}`;
 export const whoMsg = (d, h, who) => `${koDate(d)} ${koTime(h)}는 ${who === '내 예약' ? '내가 예약한 시간입니다' : `${who} 님이 예약했습니다`}`;
-export function Legend({extra}) {
-  return <HStack gap={4} hAlign="center" wrap="wrap" className="legend">
-    <span><i style={{background: 'var(--ok-soft)'}} />비어 있음</span><span><i style={{background: 'var(--busy)'}} />예약됨</span><span><i style={{background: 'var(--mine)'}} />내 예약</span>
-    {extra && <Text type="supporting" color="secondary">{extra}</Text>}</HStack>;
-}
+export const Legend = ({extra}) => <LegendBase items={[['ok-soft', '비어 있음'], ['busy', '예약됨'], ['mine', '내 예약']]} extra={extra} />;
 export function DayHead({days, today}) {
   return <div className="wk wk-head"><span />{days.map(d =>
     <div key={d} className={`dh ${d === today ? 'today' : ''} ${toDate(d).getDay() === 0 ? 'sun' : ''}`}>{wd(d)}<b>{+d.slice(8)}</b></div>)}</div>;
 }
 export function WeekNav({onPrev, onToday, onNext}) {
-  return <HStack gap={1}>
-    <IconButton label="이전 7일" variant="secondary" icon={<ChevronLeft size={16} />} onClick={onPrev} />
-    <Button label="오늘" variant="secondary" onClick={onToday} />
-    <IconButton label="다음 7일" variant="secondary" icon={<ChevronRight size={16} />} onClick={onNext} />
-  </HStack>;
+  return <div className="row wknav">
+    <Rb label="이전 7일" onClick={onPrev}><ChevronLeft /></Rb>
+    <button type="button" className="rb txt" onClick={onToday}>오늘</button>
+    <Rb label="다음 7일" onClick={onNext}><ChevronRight /></Rb>
+  </div>;
 }
-export function RoomPick({rooms, room, onChange}) {
-  return <SegmentedControl label="세미나실 고르기" value={String(room)} onChange={v => onChange(+v)} layout="fill">
-    {rooms.map(r => <SegmentedControlItem key={r.id} value={String(r.id)} label={r.name} />)}
-  </SegmentedControl>;
-}
+export const RoomPick = ({rooms, room, onChange}) => <Seg label="세미나실 고르기" value={room} onChange={onChange} items={rooms.map(r => [r.id, r.name])} />;
 
 // 배너 그림: 글 번호로 정해지는 난수로 도형 배치를 고른다 — 같은 글은 늘 같은 그림, 글마다 다른 그림
 function seeded(str) {
@@ -71,20 +63,19 @@ function BannerArt({b}) {
 }
 function Banner({b}) {
   const g = b.event, ev = b.type === 'event';
-  const label = ev ? `행사 ${g.closed ? '마감' : g.full ? '정원 마감' : '모집 중'}` : (b.kind === 'dept' ? '학과 공지' : '행사 공지');
+  const label = ev ? `행사 · ${g.closed ? '마감' : g.full ? '정원 마감' : '모집 중'}` : (b.kind === 'dept' ? '학과 공지' : '행사 공지');
   const sub = ev ? (b.starts_at ? `${koWhen(b.starts_at)} 시작` : `${koDate(g.deadline)} 마감`) : b.summary;
-  const chip = (b.chips || [])[0];
+  const chip = (b.chips || [])[0], url = chip?.type === 'url';
   return <>
-    <VStack gap={3} className="bn-text">
+    <div className="bn-text">
       <span className="bn-kicker">{label}</span>
-      <Heading level={2}>{b.title}</Heading>
-      {sub && <Text className="bn-sub">{sub}</Text>}
-      <HStack gap={2} vAlign="center" className="bn-go">
-        {chip && <Button label={chip.label} variant="secondary" className="bn-cta" href={chip.type === 'url' ? chip.target : chipHref(chip)}
-          target={chip.type === 'url' ? '_blank' : undefined} rel={chip.type === 'url' ? 'noopener noreferrer' : undefined} />}
-        <Button label="자세히" variant="ghost" className="bn-more" href={ev ? `#/event/${b.id}` : `#/notice/${b.id}`} endContent={<ChevronRight size={14} />} />
-      </HStack>
-    </VStack>
+      <h2>{b.title}</h2>
+      {sub && <p className="bn-sub">{sub}</p>}
+      <div className="bn-go">
+        {chip && <a className="bn-cta" href={url ? chip.target : chipHref(chip)} target={url ? '_blank' : undefined} rel={url ? 'noopener noreferrer' : undefined}>{chip.label}</a>}
+        <a className="bn-more" href={ev ? `#/event/${b.id}` : `#/notice/${b.id}`}>자세히 보기<IcNext /></a>
+      </div>
+    </div>
     <BannerArt b={b} />
   </>;
 }
@@ -122,61 +113,64 @@ function WeekGrid({w, days, room, me}) {
     if (!me) return goLogin();
     location.hash = `#/reserve?room=${room}&date=${d}&hour=${hr}`;
   };
+  const key = f => e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); f(); } };
   return <div className="grid-rows">{HOURS.filter(hr => hr >= DAY_FROM).map(hr => <div className="wk" key={hr}><span className="hh">{hr}시</span>
     {days.map(d => {
-      const r = map[d + '|' + hr], past = d < today || (d === today && hr < nowH);
-      return r ? <button key={d} className={'c ' + (r.mine ? 'mine' : 'busy')} onClick={() => click(d, hr, r)} aria-label={`${koDate(d)} ${koTime(hr)} ${r.mine ? '내 예약' : '예약됨'}`} />
-        : past ? <span key={d} className="c past" />
-          : <button key={d} className="c" onClick={() => click(d, hr)} aria-label={`${koDate(d)} ${koTime(hr)} 예약하기`} />;
+      const r = map[d + '|' + hr], past = d < today || (d === today && hr < nowH), f = () => click(d, hr, r);
+      return r ? <span key={d} role="button" tabIndex={0} className={'c ' + (r.mine ? 'mine' : 'busy')} onClick={f} onKeyDown={key(f)}
+          aria-label={`${koDate(d)} ${koTime(hr)} ${r.mine ? '내 예약' : '예약됨'}`}>{r.mine ? '내 예약' : '예약됨'}</span>
+        : past ? <button key={d} className="past" disabled aria-label={`${koDate(d)} ${koTime(hr)} 지남`} />
+          : <button key={d} onClick={f} aria-label={`${koDate(d)} ${koTime(hr)} 예약하기`} />;
     })}</div>)}</div>;
 }
 
 function DayBar({name, w, room}) {
   const today = w.now.slice(0, 10), nowH = +w.now.slice(11, 13) + +w.now.slice(14, 16) / 60, map = {};
   w.reservations.filter(r => r.room_id === room && r.date === today).forEach(r => { map[r.hour] = r; });
-  return <VStack gap={1}>
-    <Text weight="semibold">{name}</Text>
+  return <div className="daybar-w">
+    <b>{name}</b>
     <div className="daybar" role="img" aria-label={`${name} 오늘 예약 현황`}>
       {HOURS.map(h => <i key={h} className={map[h] ? (map[h].mine ? 'mine' : 'busy') : ''} />)}
       <b style={{left: `${nowH / 24 * 100}%`}} />
     </div>
     <div className="daybar-t"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>
-  </VStack>;
+  </div>;
 }
 
 const keep = {room: null, start: null};   // 화면을 옮겨 다녀도 고른 방·주는 기억한다
 export default function Lobby() {
-  const {me} = useMe(), narrow = useNarrow();
+  const {me} = useMe(), narrow = useMQ('(max-width: 640px)');
   const [start, setStart] = useState(keep.start), [room, setRoom] = useState(keep.room);
   keep.start = start; keep.room = room;
   const {data} = useLoad(() => Promise.all([api('banners'), SEMINAR ? api('week' + (start ? '?start=' + start : '')) : null, api('events')]), [start]);
-  if (!data) return <VStack gap={6}><Skeleton height={248} /><div className="lobby"><Skeleton height={480} /><Skeleton height={300} index={1} /></div></VStack>;
+  if (!data) return <Loading rows={[248, 300]} />;
   const [{banners}, w, ev] = data;
   const rm = w && (room || w.rooms[0].id), days = w && days7(w.start);
-  return <VStack gap={6} className="enter">
+  return <div className="col-lobby enter">
     <Carousel list={banners} />
     <div className={SEMINAR ? 'lobby' : 'lobby solo'}>
-      {!SEMINAR ? null : narrow ? <section className="room"><VStack gap={3}>
-        <HStack hAlign="between" vAlign="center"><Heading level={2}>세미나실</Heading><Button label="예약하기" variant="ghost" size="sm" href={me ? '#/reserve' : '#/login'} endContent={<ChevronRight size={14} />} /></HStack>
-        <Card padding={4}><VStack gap={4}>
-          <Text type="supporting" color="secondary">오늘 {koDate(w.now.slice(0, 10))}</Text>
+      {!SEMINAR ? null : narrow ? <section className="room">
+        <div className="sec-h"><h2>세미나실</h2><More href={me ? '#/reserve' : '#/login'}>예약하기</More></div>
+        <div className="card">
+          <p className="kicker">오늘 {koDate(w.now.slice(0, 10))}</p>
           {w.rooms.map(r => <DayBar key={r.id} name={r.name} w={w} room={r.id} />)}
-          <Legend /></VStack></Card>
-      </VStack></section>
-      : <section className="room"><VStack gap={3}>
-        <HStack hAlign="between" vAlign="end"><Heading level={2}>세미나실</Heading><Text type="supporting" color="secondary">{rangeLabel(days)}</Text></HStack>
-        <HStack gap={2} vAlign="center"><div style={{flex: 1, minWidth: 0}}><RoomPick rooms={w.rooms} room={rm} onChange={setRoom} /></div>
-          <WeekNav onPrev={() => setStart(addDays(w.start, -7))} onToday={() => setStart(null)} onNext={() => setStart(addDays(w.start, 7))} /></HStack>
-        <Card padding={3}><VStack gap={2}>
+          <Legend /></div>
+      </section>
+      : <section className="room">
+        <div className="sec-h"><h2>세미나실</h2><span className="kicker">{rangeLabel(days)}</span></div>
+        <div className="row"><div className="grow"><RoomPick rooms={w.rooms} room={rm} onChange={setRoom} /></div>
+          <WeekNav onPrev={() => setStart(addDays(w.start, -7))} onToday={() => setStart(null)} onNext={() => setStart(addDays(w.start, 7))} /></div>
+        <div className="card">
           <DayHead days={days} today={w.now.slice(0, 10)} />
           <WeekGrid w={w} days={days} room={rm} me={me} />
-          <Legend /></VStack></Card>
-        {!me && <Text type="supporting" color="secondary" justify="center">예약·대여·행사 신청은 <Link href="#/login">로그인</Link> 후 이용할 수 있습니다</Text>}
-      </VStack></section>}
-      <section className="ev-sec"><VStack gap={3}>
-        <HStack hAlign="between" vAlign="center"><Heading level={2}>행사</Heading><Button label="전체 보기" variant="ghost" size="sm" href="#/events" endContent={<ChevronRight size={14} />} /></HStack>
+          <Legend /></div>
+        {!me && <p className="muted center">예약·대여·행사 신청은 <a href="#/login">로그인</a> 후 이용할 수 있습니다</p>}
+      </section>}
+      <section className="ev-sec">
+        <div className="sec-h"><h2>행사</h2><More href="#/events">전체 보기</More></div>
         <EventsList list={ev.events.slice(0, 6)} />
-      </VStack></section>
+      </section>
     </div>
-  </VStack>;
+  </div>;
 }
+

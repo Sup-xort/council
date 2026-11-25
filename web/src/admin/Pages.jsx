@@ -1,7 +1,7 @@
 // 관리 사이트 화면들 (글쓰기 둘은 Write.jsx)
 import {useRef, useState} from 'react';
-import {Card, Heading, Text, HStack, VStack, Grid, Button, TextInput, Selector, Badge, Banner, List, ListItem, EmptyState, Skeleton, Switch} from '../ui/ax.js';
 import {Plus, Printer} from 'lucide-react';
+import {Btn, Field, Select, Chk, Empty, Note, Pill} from '../ui/kit.jsx';
 import {api, toast, josa, iso, koDate, koTime, koRange, koStamp, koSpan, toDate} from '../lib/common.js';
 import {useAsk, useLoad} from '../ui/base.jsx';
 import DataTable, {Tag, Check} from './DataTable.jsx';
@@ -9,13 +9,14 @@ import DataTable, {Tag, Check} from './DataTable.jsx';
 export const KIND = {dept: '학과 공지', event: '행사 공지'};
 export const ROLE = {user: '학생', admin: '관리자', super: '최고 관리자'};
 export function Head({title, desc, tools}) {
-  return <VStack gap={1}>
-    <HStack gap={3} vAlign="center" hAlign="between" wrap="wrap"><Heading level={1}>{title}</Heading>{tools && <HStack gap={2} wrap="wrap">{tools}</HStack>}</HStack>
-    {desc && <Text color="secondary">{desc}</Text>}
-  </VStack>;
+  return <div className="head">
+    <div className="head-t"><h1>{title}</h1>{tools && <div className="head-end">{tools}</div>}</div>
+    {desc && <p className="muted head-d">{desc}</p>}
+  </div>;
 }
-export const Loading = () => <VStack gap={3}><Skeleton height={48} /><Skeleton height={320} index={1} /></VStack>;
-export const Page = ({children}) => <VStack gap={5} className="enter">{children}</VStack>;
+export const Loading = () => <div className="sk-col"><span className="sk" style={{height: 48}} /><span className="sk" style={{height: 320}} /></div>;
+export const Page = ({children}) => <div className="pg enter">{children}</div>;
+const plus = <Plus size={16} aria-hidden="true" />;
 // 표에서 고친 칸 저장 — 서버가 한 줄이라도 틀렸다고 하면 아무것도 바뀌지 않는다
 const saver = (tbl, reload) => async changes => {
   await api('admin/cells', {table: tbl, rows: changes}); toast(`${changes.length}건을 저장했습니다`); reload();
@@ -32,15 +33,15 @@ function Rule({r, reload}) {
     const d = await api('admin/kind_hours', {kind: r.kind, hours: h});
     toast(`${josa(r.kind, '은', '는')} ${hText(d.hours)} 안에 반납하면 됩니다`); reload();
   };
-  return <Card variant="muted" padding={4}><form onSubmit={save}><VStack gap={2}>
-    <HStack gap={2} vAlign="center" hAlign="between" wrap="wrap"><Text weight="semibold">{r.kind}</Text><Text type="supporting" color="secondary">{+h > 0 ? hText(+h) : ''}</Text></HStack>
-    <HStack gap={2} vAlign="center" wrap="wrap">
-      <div className="rule-in"><TextInput label={`${r.kind} 빌릴 수 있는 시간`} isLabelHidden value={h} onChange={setH} inputMode="numeric" /></div>
-      <span className="nw"><Text color="secondary">시간</Text></span>
-      <Button type="submit" label="저장" size="sm" variant="primary" /></HStack>
-    <HStack gap={1} wrap="wrap">{[[24, '하루'], [48, '이틀'], [72, '사흘'], [168, '일주일']].map(([v, n]) =>
-      <Button key={v} label={n} size="sm" variant={+h === v ? 'primary' : 'ghost'} onClick={() => setH(String(v))} />)}</HStack>
-  </VStack></form></Card>;
+  return <form className="fieldrow rule" onSubmit={save}>
+    <div className="row"><b className="grow">{r.kind}</b><span className="muted">{+h > 0 ? hText(+h) : ''}</span></div>
+    <div className="row">
+      <input className="in rule-in" aria-label={`${r.kind} 빌릴 수 있는 시간`} value={h} onChange={e => setH(e.target.value)} inputMode="numeric" />
+      <span className="muted">시간</span>
+      <Btn type="submit" size="sm">저장</Btn></div>
+    <div className="row wrap">{[[24, '하루'], [48, '이틀'], [72, '사흘'], [168, '일주일']].map(([v, n]) =>
+      <button key={v} type="button" className="pb soft" aria-pressed={+h === v} onClick={() => setH(String(v))}>{n}</button>)}</div>
+  </form>;
 }
 export function Items({path}) {
   const ask = useAsk();
@@ -61,28 +62,28 @@ export function Items({path}) {
   };
   return <Page>
     <Head title="물품" desc="번호는 자동으로 붙습니다. 우산 3개를 넣으면 1번~3번이 되고, 우산을 또 넣으면 4번부터 이어집니다." />
-    <Grid columns={{minWidth: 300, repeat: 'fit'}} gap={3}>
-      <Card padding={4}><form onSubmit={add}><VStack gap={3}><Heading level={3}>물품 추가</Heading>
-        <HStack gap={2} vAlign="end" wrap="wrap">
-          <div className="grow" style={{minWidth: 140}}><TextInput label="종류" placeholder="예: 우산" value={kind} onChange={setKind} /></div>
-          <div style={{width: 90}}><TextInput label="개수" value={count} onChange={setCount} inputMode="numeric" /></div>
-          <Button type="submit" label="추가" variant="primary" icon={<Plus size={16} />} /></HStack></VStack></form></Card>
-      <Card padding={4}><VStack gap={3}><Heading level={3}>QR 인쇄</Heading>
-        <HStack gap={2} vAlign="end" wrap="wrap">
-          <div style={{width: 150}}><Selector label="QR 크기" options={d.qr_sizes.map(s => ({value: String(s), label: `한 변 ${s}cm`}))} value={size} onChange={setSize} /></div>
-          <Button label="고른 물품 QR PDF 받기" variant="primary" icon={<Printer size={16} />} onClick={pdf} /></HStack>
-        <Text type="supporting" color="secondary">표에서 고른 물품만 인쇄합니다. 인쇄는 실제 크기(100%)로 하십시오.</Text></VStack></Card>
-    </Grid>
-    {d.rules.length > 0 && <Card padding={4}><VStack gap={3}>
-      <VStack gap={1}><Heading level={3}>종류별 빌릴 수 있는 시간</Heading>
-        <Text type="supporting" color="secondary">빌려 간 뒤 이 시간 안에 반납해야 합니다. 정하지 않은 종류는 {hText(d.default_hours)}입니다. 시간이 지나도 반납하지 않은 물품은 ‘대여 기록’ 맨 위에 따로 모아 보여 드립니다.</Text></VStack>
-      <Grid columns={{minWidth: 240, repeat: 'fill'}} gap={2}>{d.rules.map(r => <Rule key={r.kind + r.hours} r={r} reload={reload} />)}</Grid>
-    </VStack></Card>}
+    <div className="cols even">
+      <form className="card" onSubmit={add}><h3>물품 추가</h3>
+        <div className="row end wrap">
+          <Field className="grow" label="종류" placeholder="예: 우산" value={kind} onChange={e => setKind(e.target.value)} />
+          <Field className="w90" label="개수" value={count} onChange={e => setCount(e.target.value)} inputMode="numeric" />
+          <Btn type="submit" icon={plus}>추가</Btn></div></form>
+      <div className="card"><h3>QR 인쇄</h3>
+        <div className="row end wrap">
+          <Select className="w150" label="QR 크기" options={d.qr_sizes.map(s => ({value: String(s), label: `한 변 ${s}cm`}))} value={size} onChange={setSize} />
+          <Btn icon={<Printer size={16} aria-hidden="true" />} onClick={pdf}>고른 물품 QR PDF 받기</Btn></div>
+        <p className="muted" style={{margin: 0}}>표에서 고른 물품만 인쇄합니다. 인쇄는 실제 크기(100%)로 하십시오.</p></div>
+    </div>
+    {d.rules.length > 0 && <div className="card">
+      <h3>종류별 빌릴 수 있는 시간</h3>
+      <p className="muted">빌려 간 뒤 이 시간 안에 반납해야 합니다. 정하지 않은 종류는 {hText(d.default_hours)}입니다. 시간이 지나도 반납하지 않은 물품은 ‘대여 기록’ 맨 위에 따로 모아 보여 드립니다.</p>
+      <div className="grid-fill">{d.rules.map(r => <Rule key={r.kind + r.hours} r={r} reload={reload} />)}</div>
+    </div>}
     <DataTable ref={table} path={path} rows={d.items} select onSave={saver('items', reload)} search="물품, 코드, 대여자로 찾기" empty="위에서 물품 종류와 개수를 넣어 추가하십시오."
       group={r => r.kind || r.name} cardTitle="num"
-      groupHead={(k, list) => <HStack gap={2} vAlign="center" wrap="wrap"><Text weight="semibold">{k}</Text>
-        <Text type="supporting" color="secondary">{list.length}개 · 대여 중 {list.filter(r => r.who).length}개 · 최대 {hText(hours[k] ?? d.default_hours)}</Text>
-        {list.some(r => r.late_hours) && <Tag tone="warn">기한 지남 {list.filter(r => r.late_hours).length}개</Tag>}</HStack>}
+      groupHead={(k, list) => <span className="row wrap"><b>{k}</b>
+        <span className="muted">{list.length}개 · 대여 중 {list.filter(r => r.who).length}개 · 최대 {hText(hours[k] ?? d.default_hours)}</span>
+        {list.some(r => r.late_hours) && <Tag tone="warn">기한 지남 {list.filter(r => r.late_hours).length}개</Tag>}</span>}
       columns={[
         {k: 'kind', label: '종류', filter: 'choice', title: true, edit: 'text', val: r => r.kind || r.name},
         {k: 'num', label: '번호', type: 'num', filter: false, edit: 'num', text: r => r.num ? `${r.num}번` : ''},
@@ -93,7 +94,7 @@ export function Items({path}) {
         {k: 'borrowed_at', label: '대여일자', type: 'date', period: true},
         {k: 'since', label: '빌린 기간', filter: false, val: r => r.borrowed_at ? -toDate(r.borrowed_at) : null, text: r => r.borrowed_at ? koSpan(r.borrowed_at) + '째' : ''},
         {k: 'due', label: '반납 기한', filter: false, val: r => r.due || '', text: r => r.due ? koStamp(r.due) + '까지' : '',
-          cell: r => r.due ? <HStack gap={1} vAlign="center"><span>{koStamp(r.due)}까지</span>{r.late_hours ? <Tag tone="warn">{lateText(r.late_hours)}</Tag> : null}</HStack> : ''},
+          cell: r => r.due ? <span className="row wrap" style={{gap: 6}}><span>{koStamp(r.due)}까지</span>{r.late_hours ? <Tag tone="warn">{lateText(r.late_hours)}</Tag> : null}</span> : ''},
         {k: '_', label: '', act: r => [...(r.who ? [['ret', '반납 처리']] : []), ['del', '삭제', 'destructive']]},
       ]}
       onAction={async (a, r) => {
@@ -116,10 +117,9 @@ export function Loans({path}) {
   const late = d.loans.filter(l => !l.in_at && l.late_hours).sort((a, b) => b.late_hours - a.late_hours);
   return <Page>
     <Head title="대여 기록" desc="빌릴 수 있는 시간은 ‘물품’ 메뉴에서 종류별로 정합니다." />
-    <Banner status={late.length ? 'error' : open ? 'info' : 'success'}
-      title={late.length ? `기한이 지난 대여가 ${late.length}건 있습니다` : open ? `아직 반납하지 않은 물품이 ${open}개 있습니다` : '대여 중인 물품이 없습니다'}
-      description={late.length ? '아래 표에서 연락하거나 반납 처리하십시오.' : open ? '모두 반납 기한 안에 있습니다.' : '모두 반납됐습니다.'} />
-    {late.length > 0 && <VStack gap={2}><Heading level={2}>기한이 지난 대여</Heading>
+    <Note tone={late.length || open ? '' : 'ok'} title={late.length ? <span className="req">기한이 지난 대여가 {late.length}건 있습니다</span> : open ? `아직 반납하지 않은 물품이 ${open}개 있습니다` : '대여 중인 물품이 없습니다'}>
+      {late.length ? '아래 표에서 연락하거나 반납 처리하십시오.' : open ? '모두 반납 기한 안에 있습니다.' : '모두 반납됐습니다.'}</Note>
+    {late.length > 0 && <section><h2>기한이 지난 대여</h2>
       <DataTable path={path} rows={late} urlState={false} search="물품, 이름, 학번으로 찾기" empty="기한이 지난 대여가 없습니다."
         onAction={async (a, r) => { if (a === 'ret' && await ask.confirm(`${josa(r.item, '을', '를')} 반납 처리하시겠습니까?`, {actionLabel: '반납 처리'})) { await api('admin/item_return', {id: r.item_id}); toast('반납 처리했습니다'); reload(); } }}
         columns={[
@@ -129,8 +129,8 @@ export function Loans({path}) {
           {k: 'due', label: '반납 기한', filter: false, text: r => koStamp(r.due) + '까지'},
           {k: 'late_hours', label: '지난 시간', type: 'num', filter: false, text: r => lateText(r.late_hours), cell: r => <Tag tone="warn">{lateText(r.late_hours)}</Tag>},
           {k: '_', label: '', act: () => [['ret', '반납 처리']]},
-        ]} /></VStack>}
-    <VStack gap={2}><Heading level={2}>전체 기록</Heading>
+        ]} /></section>}
+    <section><h2>전체 기록</h2>
       <DataTable path={path} rows={d.loans} onSave={saver('loans', reload)} search="물품, 이름, 학번으로 찾기" empty="아직 대여 기록이 없습니다."
         columns={[
           {k: 'item', label: '물품', title: true, edit: 'select', options: itemNames}, {k: 'kind', label: '종류', filter: 'choice'},
@@ -139,7 +139,7 @@ export function Loans({path}) {
           {k: 'in_at', label: '반납일자', type: 'date', edit: 'datetime', cell: r => r.in_at ? koStamp(r.in_at) : <Tag tone="warn">{r.late_hours ? '기한 지남' : '반납 안 함'}</Tag>},
           {k: 'span', label: '빌린 기간', filter: false, val: r => (toDate(r.in_at) || new Date()) - toDate(r.out_at), text: r => koSpan(r.out_at, r.in_at) + (r.in_at ? '' : '째')},
           {k: 'state', label: '상태', filter: 'choice', val: r => r.in_at ? '반납함' : r.late_hours ? '기한 지남' : '반납 안 함'},
-        ]} /></VStack>
+        ]} /></section>
   </Page>;
 }
 
@@ -150,15 +150,15 @@ function RoomRules() {
   if (!data) return null;
   const cur = v || {week_hours: String(data.week_hours), cancel_hours: String(data.cancel_hours)};
   const save = async e => { e.preventDefault(); await api('admin/room_rules', cur); toast('저장했습니다'); setV(null); reload(); };
-  return <Card padding={5}><form onSubmit={save}><VStack gap={3}>
-    <Heading level={3}>예약 규칙</Heading>
-    <Text type="supporting" color="secondary">0 이면 제한이 없습니다. 한 주는 월요일부터 일요일까지이며, 관리자의 예약에는 적용하지 않습니다.</Text>
-    <Grid columns={{minWidth: 220, repeat: 'fill'}} gap={3}>
-      <TextInput label="한 주에 예약할 수 있는 최대 시간" value={cur.week_hours} onChange={x => setV({...cur, week_hours: x})} inputMode="numeric" />
-      <TextInput label="시작 몇 시간 전까지 취소할 수 있는지" value={cur.cancel_hours} onChange={x => setV({...cur, cancel_hours: x})} inputMode="numeric" />
-    </Grid>
-    <HStack><Button type="submit" label="저장" variant="primary" /></HStack>
-  </VStack></form></Card>;
+  return <form className="card" onSubmit={save}>
+    <h3>예약 규칙</h3>
+    <p className="muted">0 이면 제한이 없습니다. 한 주는 월요일부터 일요일까지이며, 관리자의 예약에는 적용하지 않습니다.</p>
+    <div className="cols even">
+      <Field label="한 주에 예약할 수 있는 최대 시간" value={cur.week_hours} onChange={e => setV({...cur, week_hours: e.target.value})} inputMode="numeric" />
+      <Field label="시작 몇 시간 전까지 취소할 수 있는지" value={cur.cancel_hours} onChange={e => setV({...cur, cancel_hours: e.target.value})} inputMode="numeric" />
+    </div>
+    <Btn type="submit">저장</Btn>
+  </form>;
 }
 export function Reservations({path}) {
   const ask = useAsk();
@@ -192,7 +192,7 @@ export function Reservations({path}) {
 export function Events({path}) {
   const ask = useAsk();
   const {data: d, reload} = useLoad(() => api('admin/events'), []);
-  const head = <Head title="행사" tools={<Button label="새 행사" variant="primary" icon={<Plus size={16} />} href="#/event/new" />} />;
+  const head = <Head title="행사" tools={<Btn icon={plus} href="#/event/new">새 행사</Btn>} />;
   if (!d) return <Page>{head}<Loading /></Page>;
   return <Page>{head}
     <DataTable path={path} rows={d.events} onSave={saver('events', reload)} search="행사 이름으로 찾기" empty="행사가 없습니다."
@@ -246,11 +246,11 @@ export function Apps({path, q}) {
     {k: 'created_at', label: '신청일자', type: 'date', period: true, edit: 'datetime', val: r => r.created_at || r.updated_at},
     {k: 'updated_at', label: '수정일자', type: 'date', edit: 'datetime', val: r => r.created_at && r.updated_at !== r.created_at ? r.updated_at : ''},
   ];
-  const opts = [{value: 'all', label: '모든 행사'}, ...all.map(e => ({value: String(e.id), label: e.title}))];
+  const opts = [{value: '', label: '모든 행사'}, ...all.map(e => ({value: String(e.id), label: e.title}))];
   return <Page key={eid}>
     <Head title="신청자" desc={ev ? `${ev.title} 신청 ${d.applications.length}명` : `모든 행사의 신청 ${d.applications.length}건`}
-      tools={<div style={{width: 300, maxWidth: '100%'}}><Selector label="행사 고르기" isLabelHidden options={opts} value={eid || 'all'}
-        onChange={v => { location.hash = '#/apps' + (v && v !== 'all' ? '?event=' + v : ''); }} /></div>} />
+      tools={<select className="in w300" aria-label="행사 고르기" value={eid} onChange={e => { const v = e.target.value; location.hash = '#/apps' + (v ? '?event=' + v : ''); }}>
+        {opts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>} />
     <DataTable path={eid ? `/apps?event=${eid}` : path} rows={d.applications} columns={cols} onSave={saver('apps', reload)} empty="아직 신청한 사람이 없습니다." />
   </Page>;
 }
@@ -259,7 +259,7 @@ export function Apps({path, q}) {
 export function Notices({path}) {
   const ask = useAsk();
   const {data: d, reload} = useLoad(() => api('admin/notices'), []);
-  const head = <Head title="공지" tools={<Button label="글쓰기" variant="primary" icon={<Plus size={16} />} href="#/notice/new" />} />;
+  const head = <Head title="공지" tools={<Btn icon={plus} href="#/notice/new">글쓰기</Btn>} />;
   if (!d) return <Page>{head}<Loading /></Page>;
   const save = saver('notices', reload);
   return <Page>{head}
@@ -290,8 +290,8 @@ export function Users({path}) {
   const paid = d.users.filter(u => u.dues).length;
   return <Page>
     <Head title="회원" desc={`${d.users.length}명 중 ${paid}명이 학생회비를 납부했습니다. 표 위의 수정을 누르면 칸을 바로 고칠 수 있습니다. 관리자 지정은 ‘관리자’ 메뉴에서 합니다.`} />
-    <Card padding={4}><Switch label="새 회원 가입 받기" description={d.signup_open ? '켜져 있습니다. 학생이 가입 화면에서 직접 가입할 수 있습니다.' : '꺼져 있습니다. 로그인 화면에 회원가입 버튼이 보이지 않습니다.'} value={d.signup_open}
-      onChange={async v => { try { await api('admin/signup', {open: v}); toast(v ? '가입을 받기 시작했습니다' : '가입을 받지 않습니다'); reload(); } catch {} }} /></Card>
+    <div className="card"><Chk label="새 회원 가입 받기" desc={d.signup_open ? '켜져 있습니다. 학생이 가입 화면에서 직접 가입할 수 있습니다.' : '꺼져 있습니다. 로그인 화면에 회원가입 버튼이 보이지 않습니다.'} checked={d.signup_open}
+      onChange={async v => { try { await api('admin/signup', {open: v}); toast(v ? '가입을 받기 시작했습니다' : '가입을 받지 않습니다'); reload(); } catch {} }} /></div>
     <DataTable path={path} rows={d.users} onSave={saver('users', reload)}
       columns={[
         {k: 'name', label: '이름', title: true, edit: 'text'}, {k: 'student_id', label: '학번', edit: 'text'},
@@ -322,30 +322,32 @@ export function Admins({me}) {
   };
   const k = find.trim().toLowerCase();
   const list = students.filter(u => !k || [u.name, u.student_id, u.username].some(v => String(v).toLowerCase().includes(k)));
+  const Who = ({u, end}) => <div><div className="grow"><b className="li-t">{u.name}</b><span className="muted">{desc(u)}</span></div>{end}</div>;
   return <Page>
     <Head title="관리자" desc={isSuper ? '관리자를 지정하거나 해제하고, 최고 관리자 자리를 넘길 수 있습니다.' : '관리자 지정은 최고 관리자만 할 수 있습니다.'} />
-    <VStack gap={4} className="admins">
-      <Card padding={4}><VStack gap={3}><Heading level={3}>최고 관리자</Heading>
-        {sup ? <List><ListItem label={sup.name} description={desc(sup)} endContent={<Tag tone="ok">최고 관리자</Tag>} /></List>
-          : <Banner status="warning" title="지금 최고 관리자가 없습니다" description="서버에서 python3 council.py super 아이디 를 한 번 실행해 주십시오." />}
-        {isSuper && <VStack gap={2}><Text type="supporting" color="secondary">자리를 넘기면 본인은 일반 관리자가 되며, 되돌리려면 받은 사람이 다시 넘겨야 합니다.</Text>
-          <HStack gap={2} vAlign="end" wrap="wrap"><div className="grow" style={{minWidth: 200}}>
-            <Selector label="넘길 회원" hasSearch placeholder="넘길 회원 고르기" value={to || undefined} onChange={setTo}
-              options={all.filter(u => u.role !== 'super').map(u => ({value: String(u.id), label: `${u.name} (${u.student_id})`}))} /></div>
-            <Button label="최고 관리자 넘기기" variant="destructive" onClick={hand} /></HStack></VStack>}
-      </VStack></Card>
-      <Card padding={4}><VStack gap={2}><HStack gap={2} vAlign="center"><Heading level={3}>관리자</Heading><Badge variant="neutral" label={`${admins.length}명`} /></HStack>
-        {admins.length ? <List hasDividers>{admins.map(u => <ListItem key={u.id} label={u.name} description={desc(u)}
-          endContent={isSuper && <Button label="관리자 해제" size="sm" variant="destructive" onClick={() => role(`${u.name} 님의 관리자 권한을 해제하시겠습니까?`, {id: u.id, role: 'user'}, '해제했습니다')} />} />)}</List>
-          : <EmptyState isCompact title="아직 관리자가 없습니다" />}
-      </VStack></Card>
-      {isSuper && <Card padding={4}><VStack gap={3}><Heading level={3}>관리자로 지정하기</Heading>
-        <TextInput label="회원 찾기" isLabelHidden placeholder="이름, 학번, 아이디로 찾기" value={find} onChange={setFind} hasClear />
-        {list.length ? <List hasDividers>{list.slice(0, 20).map(u => <ListItem key={u.id} label={u.name} description={desc(u)}
-          endContent={<Button label="관리자로 지정" size="sm" variant="secondary" onClick={() => role(`${u.name} 님을 관리자로 지정하시겠습니까?`, {id: u.id, role: 'admin'}, '지정했습니다')} />} />)}</List>
-          : <EmptyState isCompact title="찾는 학생이 없습니다" />}
-        {list.length > 20 && <Text type="supporting" color="secondary">{list.length - 20}명 더 있습니다. 이름이나 학번으로 좁혀 주십시오.</Text>}
-      </VStack></Card>}
-    </VStack>
+    <div className="admins">
+      <section className="card"><h3>최고 관리자</h3>
+        {sup ? <div className="list"><Who u={sup} end={<Tag tone="ok">최고 관리자</Tag>} /></div>
+          : <Note title="지금 최고 관리자가 없습니다">서버에서 python3 council.py super 아이디 를 한 번 실행해 주십시오.</Note>}
+        {isSuper && <div className="note-top">
+          <p className="muted" style={{margin: '0 0 8px'}}>자리를 넘기면 본인은 일반 관리자가 되며, 되돌리려면 받은 사람이 다시 넘겨야 합니다.</p>
+          <div className="row end wrap">
+            <Select className="grow" label="넘길 회원" placeholder="넘길 회원 고르기" value={to} onChange={setTo}
+              options={all.filter(u => u.role !== 'super').map(u => ({value: String(u.id), label: `${u.name} (${u.student_id})`}))} />
+            <Btn kind="red" onClick={hand}>최고 관리자 넘기기</Btn></div></div>}
+      </section>
+      <section className="card"><div className="row"><h3 className="grow" style={{margin: 0}}>관리자</h3><Pill>{admins.length}명</Pill></div>
+        {admins.length ? <div className="list">{admins.map(u => <Who key={u.id} u={u}
+          end={isSuper && <Btn kind="red" size="sm" onClick={() => role(`${u.name} 님의 관리자 권한을 해제하시겠습니까?`, {id: u.id, role: 'user'}, '해제했습니다')}>관리자 해제</Btn>} />)}</div>
+          : <Empty title="아직 관리자가 없습니다" />}
+      </section>
+      {isSuper && <section className="card"><h3>관리자로 지정하기</h3>
+        <input type="search" className="in" aria-label="회원 찾기" placeholder="이름, 학번, 아이디로 찾기" value={find} onChange={e => setFind(e.target.value)} />
+        {list.length ? <div className="list">{list.slice(0, 20).map(u => <Who key={u.id} u={u}
+          end={<Btn kind="ghost" size="sm" onClick={() => role(`${u.name} 님을 관리자로 지정하시겠습니까?`, {id: u.id, role: 'admin'}, '지정했습니다')}>관리자로 지정</Btn>} />)}</div>
+          : <Empty title="찾는 학생이 없습니다" />}
+        {list.length > 20 && <p className="muted">{list.length - 20}명 더 있습니다. 이름이나 학번으로 좁혀 주십시오.</p>}
+      </section>}
+    </div>
   </Page>;
 }

@@ -1,7 +1,7 @@
 // 공지 쓰기 · 행사 쓰기 (넓으면 2단: 본문 | 설정, 좁으면 위아래)
 import {useRef, useState} from 'react';
-import {Card, Heading, Text, HStack, VStack, Button, IconButton, TextInput, Selector, Switch, CheckboxInput, SegmentedControl, SegmentedControlItem, Banner, EmptyState} from '../ui/ax.js';
 import {Plus, X, ArrowUp, ArrowDown, Copy, Trash2, Circle, Square} from 'lucide-react';
+import {Btn, Rb, Field, Select, Chk, Seg, Empty, Note} from '../ui/kit.jsx';
 import {api, toast, koWhen} from '../lib/common.js';
 import {useLoad} from '../ui/base.jsx';
 import RichEditor from './RichEditor.jsx';
@@ -13,11 +13,7 @@ const opts = list => list.map(([value, label]) => ({value: String(value), label}
 
 // 날짜·시각 칸: 브라우저 달력을 쓰고, 아래에 읽기 쉬운 말로 다시 보여 준다
 function When({label, value, onChange, required}) {
-  return <VStack gap={1}>
-    <Text type="label" weight="medium">{label}</Text>
-    <input className="ce" type="datetime-local" aria-label={label} value={value} onChange={e => onChange(e.target.value)} required={required} />
-    {value && <Text type="supporting" color="secondary">{koWhen(value)}</Text>}
-  </VStack>;
+  return <Field label={label} req={required} hint={value ? koWhen(value) : undefined} type="datetime-local" value={value} onChange={e => onChange(e.target.value)} required={required} />;
 }
 
 // ── 공지 쓰기 ─────────────────────────────────────────────────────────
@@ -39,9 +35,9 @@ function NoticeForm({isNew, id, evs, nts, n}) {
   const setChip = (i, patch) => setChips(cs => cs.map((c, j) => j === i ? {...c, ...patch} : c));
   const target = (c, i) => {
     const on = v => setChip(i, {target: v});
-    if (c.type === 'url') return <TextInput label="인터넷 주소" isLabelHidden value={c.target} onChange={on} placeholder="https://…" />;
+    if (c.type === 'url') return <Field label="인터넷 주소" value={c.target} onChange={e => on(e.target.value)} placeholder="https://…" />;
     const list = c.type === 'tab' ? Object.entries(TABS) : c.type === 'event' ? evs.map(e => [e.id, e.title]) : others.map(x => [x.id, x.title]);
-    return <Selector label="갈 곳" isLabelHidden options={opts(list)} value={c.target || undefined} onChange={on} placeholder={list.length ? '고르기' : '고를 것이 없습니다'} hasSearch={list.length > 8} />;
+    return <Select label="갈 곳" options={opts(list)} value={c.target} onChange={on} placeholder={list.length ? '고르기' : '고를 것이 없습니다'} />;
   };
   const submit = async e => {
     e.preventDefault();
@@ -54,34 +50,33 @@ function NoticeForm({isNew, id, evs, nts, n}) {
     } catch {} finally { setBusy(false); }
   };
   return <form onSubmit={submit}><Page>
-    <Head title={isNew ? '공지 쓰기' : '공지 수정'} tools={<><Button label="목록으로" variant="secondary" href="#/notices" /><Button type="submit" label={isNew ? '올리기' : '저장'} variant="primary" isLoading={busy} /></>} />
+    <Head title={isNew ? '공지 쓰기' : '공지 수정'} tools={<><Btn kind="ghost" size="sm" href="#/notices">목록으로</Btn><Btn type="submit" size="sm" busy={busy}>{isNew ? '올리기' : '저장'}</Btn></>} />
     <div className="write">
-      <VStack gap={3}>
-        <TextInput label="제목" size="lg" value={title} onChange={setTitle} placeholder="제목" />
-        <TextInput label="한 줄 소개" description="목록과 로비 배너에 보입니다" value={summary} onChange={setSummary} />
+      <div>
+        <Field label="제목" value={title} onChange={e => setTitle(e.target.value)} placeholder="제목" />
+        <Field label="한 줄 소개" hint="목록과 로비 배너에 보입니다" value={summary} onChange={e => setSummary(e.target.value)} />
         <RichEditor ref={ed} value={n.body} draftKey={'draft:notice:' + id} max={20000} />
-      </VStack>
-      <VStack gap={3} className="side-set">
-        <Card padding={4}><VStack gap={4}>
-          <VStack gap={2}><Text type="label" weight="medium">분류</Text>
-            <SegmentedControl label="분류" value={kind} onChange={setKind} layout="fill">
-              {Object.entries(KIND).reverse().map(([k, t]) => <SegmentedControlItem key={k} value={k} label={t} />)}</SegmentedControl>
-            <Text type="supporting" color="secondary">{kind === 'event' ? '행사 공지는 로그인하지 않은 사람도 읽을 수 있습니다.' : '학과 공지는 로그인한 사람만 읽을 수 있습니다.'}</Text></VStack>
-          <Switch label="로비 맨 위에 보이기" description="로그인하지 않은 사람도 이 글을 읽을 수 있게 됩니다" value={onLobby} onChange={setOnLobby} />
-          <Selector label="신청 현황을 같이 보여 줄 행사" options={[{value: 'none', label: '없음'}, ...opts(evs.map(e => [e.id, e.title]))]}
-            value={eventId || 'none'} onChange={v => setEventId(v === 'none' ? '' : v)} />
-        </VStack></Card>
-        <Card padding={4}><VStack gap={3}>
-          <VStack gap={1}><Heading level={3}>바로가기 버튼</Heading><Text type="supporting" color="secondary">글 아래에 붙는 버튼입니다. 6개까지 달 수 있습니다.</Text></VStack>
-          {chips.map((c, i) => <Card key={i} variant="muted" padding={3} className="enter"><VStack gap={2}>
-            <HStack gap={2} vAlign="end"><div className="grow"><TextInput label="버튼 글" value={c.label} onChange={v => setChip(i, {label: v})} placeholder="예: 세미나실 예약하기" /></div>
-              <IconButton label="버튼 지우기" variant="ghost" icon={<X size={16} />} onClick={() => setChips(cs => cs.filter((_, j) => j !== i))} /></HStack>
-            <Selector label="누르면 갈 곳" options={opts(CHIP_TYPES)} value={c.type} onChange={v => setChip(i, {type: v, target: first[v]})} />
+      </div>
+      <div className="side-set">
+        <div className="card">
+          <span className="lab-s">분류</span>
+          <Seg label="분류" value={kind} onChange={setKind} items={Object.entries(KIND).reverse()} />
+          <p className="muted" style={{margin: '-6px 0 14px'}}>{kind === 'event' ? '행사 공지는 로그인하지 않은 사람도 읽을 수 있습니다.' : '학과 공지는 로그인한 사람만 읽을 수 있습니다.'}</p>
+          <Chk label="로비 맨 위에 보이기" desc="로그인하지 않은 사람도 이 글을 읽을 수 있게 됩니다" checked={onLobby} onChange={setOnLobby} />
+          <Select label="신청 현황을 같이 보여 줄 행사" className="mt" options={[{value: '', label: '없음'}, ...opts(evs.map(e => [e.id, e.title]))]}
+            value={eventId} onChange={setEventId} />
+        </div>
+        <div className="card">
+          <h3 style={{marginBottom: 4}}>바로가기 버튼</h3><p className="muted" style={{marginTop: 0}}>글 아래에 붙는 버튼입니다. 6개까지 달 수 있습니다.</p>
+          {chips.map((c, i) => <div key={i} className="fieldrow enter">
+            <div className="row end"><Field className="grow" label="버튼 글" value={c.label} onChange={e => setChip(i, {label: e.target.value})} placeholder="예: 세미나실 예약하기" />
+              <Rb label="버튼 지우기" onClick={() => setChips(cs => cs.filter((_, j) => j !== i))}><X /></Rb></div>
+            <Select label="누르면 갈 곳" options={opts(CHIP_TYPES)} value={c.type} onChange={v => setChip(i, {type: v, target: first[v]})} />
             {target(c, i)}
-          </VStack></Card>)}
-          <Button label="버튼 추가" variant="secondary" icon={<Plus size={16} />} isDisabled={chips.length >= 6} onClick={() => setChips(cs => [...cs, {label: '', type: 'tab', target: 'reserve'}])} />
-        </VStack></Card>
-      </VStack>
+          </div>)}
+          <Btn kind="ghost" icon={<Plus size={16} aria-hidden="true" />} disabled={chips.length >= 6} onClick={() => setChips(cs => [...cs, {label: '', type: 'tab', target: 'reserve'}])}>버튼 추가</Btn>
+        </div>
+      </div>
     </div>
   </Page></form>;
 }
@@ -102,30 +97,30 @@ export function EventWrite({id}) {
 function Question({f, i, n, upd, move, dup, del, list}) {
   const focus = sel => setTimeout(() => list.current?.querySelector(`[data-q="${i}"] ${sel}`)?.focus(), 0);
   const Mark = f.type === 'multi' ? Square : Circle;
-  return <div data-q={i}><Card padding={4} className="qcard enter"><VStack gap={3}>
-    <HStack gap={2} vAlign="end" wrap="wrap">
-      <div className="grow" style={{minWidth: 200}}><TextInput label={`질문 ${i + 1}`} value={f.label} onChange={v => upd({label: v})} placeholder="예: 티셔츠 사이즈" /></div>
-      <div style={{width: 170}}><Selector label="답하는 방식" options={opts(typesFor(f))} value={f.type}
-        onChange={t => upd({type: t, options: hasOpts({type: t}) && !f.options.length ? [''] : f.options})} /></div>
-    </HStack>
-    {hasOpts(f) ? <VStack gap={1}>
-      {f.options.map((o, j) => <HStack key={j} gap={2} vAlign="center">
-        {f.type === 'dropdown' ? <Text color="secondary" className="qn">{j + 1}</Text> : <Mark size={16} className="qmark" />}
-        <div className="grow" data-o={j}><TextInput label={`보기 ${j + 1}`} isLabelHidden value={o} placeholder={`보기 ${j + 1}`}
-          onChange={v => upd({options: f.options.map((p, k) => k === j ? v : p)})}
+  return <div data-q={i} className="fieldrow qcard enter">
+    <div className="row end wrap">
+      <Field className="grow minw200" label={`질문 ${i + 1}`} value={f.label} onChange={e => upd({label: e.target.value})} placeholder="예: 티셔츠 사이즈" />
+      <Select className="w170" label="답하는 방식" options={opts(typesFor(f))} value={f.type}
+        onChange={t => upd({type: t, options: hasOpts({type: t}) && !f.options.length ? [''] : f.options})} />
+    </div>
+    {hasOpts(f) ? <div className="qopts">
+      {f.options.map((o, j) => <div key={j} className="row">
+        {f.type === 'dropdown' ? <span className="muted qn">{j + 1}</span> : <Mark size={16} className="qmark" aria-hidden="true" />}
+        <div className="grow" data-o={j}><input className="in" aria-label={`보기 ${j + 1}`} value={o} placeholder={`보기 ${j + 1}`}
+          onChange={e => upd({options: f.options.map((p, k) => k === j ? e.target.value : p)})}
           onKeyDown={x => { if (x.key !== 'Enter' || x.nativeEvent.isComposing) return; x.preventDefault(); const os = [...f.options]; os.splice(j + 1, 0, ''); upd({options: os}); focus(`[data-o="${j + 1}"] input`); }} /></div>
-        <IconButton label={`보기 ${j + 1} 지우기`} variant="ghost" size="sm" icon={<X size={14} />} onClick={() => upd({options: f.options.filter((_, k) => k !== j)})} />
-      </HStack>)}
-      <div><Button label="보기 추가" variant="ghost" size="sm" icon={<Plus size={14} />} onClick={() => { upd({options: [...f.options, '']}); focus(`[data-o="${f.options.length}"] input`); }} /></div>
-    </VStack> : <Text type="supporting" color="secondary">{PREV[f.type]}</Text>}
-    <HStack gap={1} vAlign="center" wrap="wrap" className="qbar">
-      <Switch label="필수 질문" size="sm" value={!!f.required} onChange={v => upd({required: v})} /><span className="grow" />
-      <IconButton label="위로" tooltip="위로" variant="ghost" size="sm" icon={<ArrowUp size={16} />} isDisabled={!i} onClick={() => move(-1)} />
-      <IconButton label="아래로" tooltip="아래로" variant="ghost" size="sm" icon={<ArrowDown size={16} />} isDisabled={i >= n - 1} onClick={() => move(1)} />
-      <IconButton label="복사" tooltip="복사" variant="ghost" size="sm" icon={<Copy size={16} />} onClick={dup} />
-      <IconButton label="지우기" tooltip="지우기" variant="ghost" size="sm" icon={<Trash2 size={16} />} onClick={del} />
-    </HStack>
-  </VStack></Card></div>;
+        <Rb label={`보기 ${j + 1} 지우기`} onClick={() => upd({options: f.options.filter((_, k) => k !== j)})}><X /></Rb>
+      </div>)}
+      <div><button type="button" className="pb soft" onClick={() => { upd({options: [...f.options, '']}); focus(`[data-o="${f.options.length}"] input`); }}>보기 추가</button></div>
+    </div> : <p className="muted" style={{margin: '0 0 8px'}}>{PREV[f.type]}</p>}
+    <div className="row wrap qbar">
+      <Chk label="필수 질문" checked={!!f.required} onChange={v => upd({required: v})} /><span className="grow" />
+      <Rb label="위로" disabled={!i} onClick={() => move(-1)}><ArrowUp /></Rb>
+      <Rb label="아래로" disabled={i >= n - 1} onClick={() => move(1)}><ArrowDown /></Rb>
+      <Rb label="복사" onClick={dup}><Copy /></Rb>
+      <Rb label="지우기" onClick={del}><Trash2 /></Rb>
+    </div>
+  </div>;
 }
 function EventForm({id, e, isNew}) {
   const ed = useRef(null), list = useRef(null);
@@ -153,37 +148,37 @@ function EventForm({id, e, isNew}) {
     } catch {} finally { setBusy(false); }
   };
   return <form onSubmit={submit}><Page>
-    <Head title={isNew ? '새 행사' : '행사 수정'} tools={<><Button label="목록으로" variant="secondary" href="#/events" /><Button type="submit" label="저장" variant="primary" isLoading={busy} /></>} />
+    <Head title={isNew ? '새 행사' : '행사 수정'} tools={<><Btn kind="ghost" size="sm" href="#/events">목록으로</Btn><Btn type="submit" size="sm" busy={busy}>저장</Btn></>} />
     <div className="write">
-      <VStack gap={3}>
-        <TextInput label="행사 이름" size="lg" value={v.title} onChange={set('title')} placeholder="행사 이름" />
+      <div>
+        <Field label="행사 이름" value={v.title} onChange={x => set('title')(x.target.value)} placeholder="행사 이름" />
         <RichEditor ref={ed} value={e.body} draftKey={'draft:event:' + id} max={5000} placeholder="행사 설명을 쓰십시오" />
-      </VStack>
-      <VStack gap={3} className="side-set">
-        <Card padding={4}><VStack gap={4}>
+      </div>
+      <div className="side-set">
+        <div className="card">
           <When label="행사 일시 (없으면 비워 두십시오)" value={v.starts_at} onChange={set('starts_at')} />
           <When label="신청 마감" value={v.deadline} onChange={set('deadline')} required />
-          <TextInput label="정원" description="비워 두면 제한 없음" value={v.capacity} onChange={set('capacity')} inputMode="numeric" placeholder="제한 없음" />
-          <Switch label="신청 인원을 학생에게 보이기" description="끄면 인원 대신 '신청 받는 중'만 보입니다" value={v.show_count} onChange={set('show_count')} />
-          <Switch label="로비에 보이기" value={v.on_lobby} onChange={set('on_lobby')} />
-          <Switch label="학생회비 납부자만 신청 받기" description="미납부자에게는 신청서 대신 안내 문구가 보입니다. 회원 메뉴에서 납부자를 표시하십시오." value={v.dues_only} onChange={set('dues_only')} />
-        </VStack></Card>
-        <Card padding={4}><VStack gap={3}>
-          <VStack gap={1}><Heading level={3}>신청서에 더 물어볼 것</Heading><Text type="supporting" color="secondary">이름·학번·이메일은 계정에서 자동으로 들어갑니다.</Text></VStack>
-          {e.n > 0 && <Banner status="warning" title="이미 신청한 사람이 있습니다" description="순서를 바꿔도 받아 둔 답은 그대로 따라가지만, 질문을 지우면 그 질문의 답도 함께 지워집니다." />}
-          <VStack gap={2} ref={list}>
+          <Field label="정원" hint="비워 두면 제한 없음" value={v.capacity} onChange={x => set('capacity')(x.target.value)} inputMode="numeric" placeholder="제한 없음" />
+          <Chk label="신청 인원을 학생에게 보이기" desc="끄면 인원 대신 '신청 받는 중'만 보입니다" checked={v.show_count} onChange={set('show_count')} />
+          <Chk label="로비에 보이기" checked={v.on_lobby} onChange={set('on_lobby')} />
+          <Chk label="학생회비 납부자만 신청 받기" desc="미납부자에게는 신청서 대신 안내 문구가 보입니다. 회원 메뉴에서 납부자를 표시하십시오." checked={v.dues_only} onChange={set('dues_only')} />
+        </div>
+        <div className="card">
+          <h3 style={{marginBottom: 4}}>신청서에 더 물어볼 것</h3><p className="muted" style={{marginTop: 0}}>이름·학번·이메일은 계정에서 자동으로 들어갑니다.</p>
+          {e.n > 0 && <Note title="이미 신청한 사람이 있습니다">순서를 바꿔도 받아 둔 답은 그대로 따라가지만, 질문을 지우면 그 질문의 답도 함께 지워집니다.</Note>}
+          <div className="qlist" ref={list}>
             {fields.length ? fields.map((f, i) => <Question key={f._k} f={f} i={i} n={fields.length} list={list} upd={p => upd(i, p)}
               move={d => setFields(fs => { const x = [...fs]; [x[i], x[i + d]] = [x[i + d], x[i]]; return x; })}
               dup={() => { const k = nextKey.current++; setFields(fs => { const x = [...fs]; x.splice(i + 1, 0, {...f, id: undefined, options: [...f.options], _k: k}); return x; }); }}
               del={() => setFields(fs => fs.filter((_, j) => j !== i))} />)
-              : <EmptyState isCompact title="아직 질문이 없습니다" description="이름·학번·이메일만 받습니다." />}
-          </VStack>
-          <Button label="질문 추가" variant="secondary" icon={<Plus size={16} />} onClick={() => {
+              : <Empty title="아직 질문이 없습니다" desc="이름·학번·이메일만 받습니다." />}
+          </div>
+          <Btn kind="ghost" icon={<Plus size={16} aria-hidden="true" />} onClick={() => {
             const k = nextKey.current++, at = fields.length; setFields(fs => [...fs, {label: '', type: 'text', required: false, options: [], _k: k}]);
             setTimeout(() => { const c = list.current?.querySelector(`[data-q="${at}"]`); c?.scrollIntoView({block: 'center', behavior: 'smooth'}); c?.querySelector('input')?.focus(); }, 0);
-          }} />
-        </VStack></Card>
-      </VStack>
+          }}>질문 추가</Btn>
+        </div>
+      </div>
     </div>
   </Page></form>;
 }

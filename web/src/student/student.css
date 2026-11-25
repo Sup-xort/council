@@ -48,11 +48,11 @@ main.bare { padding-bottom: calc(40px + var(--safe-b)); }
 .code-row { align-items: flex-start; }
 .code-row .btn { margin-top: 26px; flex: none; }
 /* 로그인·신청서 뒤 은은한 번짐 (sand·mine) */
-body:has(.auth), .apply-bg { isolation: isolate; overflow-x: hidden; }
-body:has(.auth)::before, body:has(.auth)::after, .apply-bg::before, .apply-bg::after { content: ""; position: fixed; z-index: -1; width: max(46vw, 360px); height: max(70vh, 420px); pointer-events: none; }
-body:has(.auth)::before, .apply-bg::before { left: 0; top: 4vh; transform: translateX(-50%); background: radial-gradient(closest-side, var(--ok), transparent); opacity: .8; }
-body:has(.auth)::after, .apply-bg::after { right: 0; bottom: 4vh; transform: translateX(50%); background: radial-gradient(closest-side, var(--mine), transparent); opacity: .8; }
-.apply-bg::before { background: radial-gradient(closest-side, var(--sand), transparent); }
+body:has(.auth), body:has(.apply-bg) { isolation: isolate; overflow-x: hidden; }
+body:has(.auth)::before, body:has(.auth)::after, body:has(.apply-bg)::before, body:has(.apply-bg)::after { content: ""; position: fixed; z-index: -1; width: max(46vw, 360px); height: max(70vh, 420px); pointer-events: none; }
+body:has(.auth)::before, body:has(.apply-bg)::before { left: 0; top: 4vh; transform: translateX(-50%); background: radial-gradient(closest-side, var(--ok), transparent); opacity: .8; }
+body:has(.auth)::after, body:has(.apply-bg)::after { right: 0; bottom: 4vh; transform: translateX(50%); background: radial-gradient(closest-side, var(--mine), transparent); opacity: .8; }
+body:has(.apply-bg)::before { background: radial-gradient(closest-side, var(--sand), transparent); }
 .authbox .brand .mark { margin: 0; }
 @media (max-width: 520px) { .logo.hero { height: 52px; } }
 .result .big.sk { display: inline-flex; }

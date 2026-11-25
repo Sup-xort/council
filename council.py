@@ -1,9 +1,8 @@
 """SWITCH — 반도체융합공학과 학생회 홈페이지 (데모).
 
 물품 대여(QR), 세미나실 예약, 행사 신청, 관리자 페이지.
-nginx 가 /council/ 를 벗겨 127.0.0.1:8792 로 넘긴다. 페이지는 상대경로만 쓴다.
 
-QR 내용은 {ORIGIN}/council/q/<코드>. 기본 카메라로 찍으면 /q/<코드> 로 들어오고,
+QR 내용은 {ORIGIN}/q/<코드>. 기본 카메라로 찍으면 /q/<코드> 로 들어오고,
 서버는 ../#/q/<코드> 로 돌려보낸다 — 대여·반납은 페이지가 POST api/scan 으로 한다
 (GET 으로 상태를 바꾸면 메신저 링크 미리보기가 물건을 빌려 버린다).
 
@@ -38,7 +37,7 @@ import segno  # noqa: E402
 
 HOST, PORT = "127.0.0.1", int(os.environ.get("COUNCIL_PORT", 8792))
 DB = os.environ.get("COUNCIL_DB", os.path.join(BASE, "data", "council.db"))
-ORIGIN = os.environ.get("COUNCIL_ORIGIN", "https://sqhsxp.duckdns.org")
+ORIGIN = os.environ.get("COUNCIL_ORIGIN", "https://sce-council.o-r.kr")
 PREFIX = os.environ.get("COUNCIL_PREFIX", "/council")  # 루트에 호스팅하면 ""
 ENV_FILE = os.path.join(BASE, "council.env")
 QR_PREFIX = ORIGIN + PREFIX + "/q/"

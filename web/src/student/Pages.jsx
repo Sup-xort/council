@@ -10,6 +10,18 @@ import {useMe, State, DDay, Gauge, EventsList, Md, Loading, PageHead, chipHref} 
 
 // ── 대여 ──────────────────────────────────────────────────────────────
 const byKind = items => { const m = new Map(); items.forEach(i => { const k = i.kind || i.name; (m.get(k) || m.set(k, []).get(k)).push(i); }); return [...m]; };
+function LoanHistory() {
+  const {data} = useLoad(() => api('mypage'), []);
+  const list = data ? data.loans : [];
+  if (!list.length) return null;
+  return <VStack gap={2}>
+    <Heading level={3}>내 대여 기록</Heading>
+    <Card padding={2}><List hasDividers>{list.map((r, i) =>
+      <ListItem key={i} label={r.kind && r.num ? `${r.kind} ${r.num}번` : r.name}
+        description={`${koStamp(r.out_at)} 대여${r.in_at ? ` · ${koStamp(r.in_at)} 반납` : ''}`}
+        endContent={<Badge variant={r.in_at ? 'neutral' : 'blue'} label={r.in_at ? '반납함' : '대여 중'} />} />)}</List></Card>
+  </VStack>;
+}
 export function Items() {
   const {data} = useLoad(() => api('items'), []);
   if (!data) return <Loading rows={[80, 120, 120]} />;
@@ -36,6 +48,7 @@ export function Items() {
         })}</div>
       </VStack></Card>;
     })}</Grid> : <Card><EmptyState title="아직 대여할 수 있는 물품이 없습니다" /></Card>}
+    <LoanHistory />
   </VStack>;
 }
 
@@ -205,19 +218,17 @@ export function Notice({id}) {
   </VStack></div>;
 }
 
-export function Settings() {
+export function MailSettings() {
   const {me, setMe} = useMe();
   const [busy, setBusy] = useState('');
   const set = async (k, v) => {
     setBusy(k);
-    try { const d = await api('mail_prefs', {[k]: v}); setMe(d.user); toast(v ? '메일을 받도록 바꿨습니다' : '메일을 받지 않도록 바꿨습니다'); }
+    try { const d = await api('mail_prefs', {[k]: v}); setMe(d.user); toast(v ? '메일을 받도록 바꿨어요' : '메일을 받지 않도록 바꿨어요'); }
     catch {} finally { setBusy(''); }
   };
-  return <div className="narrow"><VStack gap={4}>
-    <PageHead title="설정" desc="새 공지가 올라오면 가입한 이메일로 알려 드립니다." />
-    <Card padding={5}><VStack gap={4} hAlign="stretch">
-      <Switch label="학과 공지 메일" description={`${me.email} 로 받습니다`} value={me.mail_dept} isDisabled={busy === 'mail_dept'} onChange={v => set('mail_dept', v)} />
-      <Switch label="행사 공지 메일" description="새 행사 공지가 올라올 때만 받습니다" value={me.mail_event} isDisabled={busy === 'mail_event'} onChange={v => set('mail_event', v)} />
-    </VStack></Card>
-  </VStack></div>;
+  return <Card padding={5}><VStack gap={4} hAlign="stretch">
+    <Text type="supporting" color="secondary">새 공지가 올라오면 가입한 이메일로 알려 드려요.</Text>
+    <Switch label="학과 공지 메일" description={`${me.email} 로 받아요`} value={me.mail_dept} isDisabled={busy === 'mail_dept'} onChange={v => set('mail_dept', v)} />
+    <Switch label="행사 공지 메일" description="새 행사 공지가 올라올 때만 받아요" value={me.mail_event} isDisabled={busy === 'mail_event'} onChange={v => set('mail_event', v)} />
+  </VStack></Card>;
 }

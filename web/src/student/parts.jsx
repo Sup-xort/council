@@ -59,7 +59,7 @@ export function EventsList({list}) {
       </VStack></Card>;
     })}
     {done.length > 0 && <Card padding={2}><List hasDividers>{done.map(e =>
-      <ListItem key={e.id} label={e.title} description="마감" endContent={<ChevronRight size={16} />} onClick={() => { location.hash = `#/event/${e.id}`; }} />)}</List></Card>}
+      <ListItem key={e.id} label={e.title} description="마감됨" endContent={<ChevronRight size={16} />} onClick={() => { location.hash = `#/event/${e.id}`; }} />)}</List></Card>}
   </VStack>;
 }
 

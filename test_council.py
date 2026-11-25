@@ -217,7 +217,8 @@ assert d["notice"]["event"]["capacity"] is None and d["notice"]["event"]["n"] ==
 assert d["prev"] is None or d["prev"]["title"] != "수강정정"                            # 이전 글에도 막힌 글이 안 샌다
 assert len(b.call("/api/notices")[1]["notices"]) == 3
 bn = anon.call("/api/banners")[1]["banners"]
-assert [x["title"] for x in bn] == ["학과 배너"]       # 마감된 행사는 배너에서 빠진다
+assert [x["title"] for x in bn] == ["MT 공지", "긴 글", "학과 배너"]       # 진행 중인 행사가 먼저, 학과 공지는 뒤
+assert [x["title"] for x in a.call("/api/banners")[1]["banners"]] == ["MT 공지", "긴 글"]     # 로그인하면 학과 공지는 빠진다
 
 # 정원: 무제한 / 찼을 때 거절 / 기존 신청자 수정은 허용 / 인원 숨김
 ev = {"title": "MT", "deadline": future, "on_lobby": True, "fields": []}
@@ -331,6 +332,10 @@ assert Client().call("/api/forgot", {"email": "bob@skku.edu"})[0] == 503        
 os.environ["SMTP_HOST"] = "test"
 sent = []
 council.mail_later = lambda to, subj, body, page=None: sent.append((to, body, page))
+assert b.call("/api/scan", {"code": item["code"]})[1]["result"] == "borrowed"
+assert len(sent) == 1 and sent[0][0] == "bob@skku.edu" and "까지 반납해 주십시오" in sent[0][1] and "대여 현황 보기" in sent[0][2]
+assert b.call("/api/scan", {"code": item["code"]})[1]["result"] == "returned" and len(sent) == 1      # 반납은 메일 없음
+sent.clear()
 assert Client().call("/api/forgot", {"email": "nobody@skku.edu"}) == (200, {"ok": True}) and not sent
 assert Client().call("/api/forgot", {"email": "BOB@skku.edu"})[0] == 200 and sent[0][0] == "bob@skku.edu" and "bob" in sent[0][1]
 Client().call("/api/forgot", {"email": "bob@skku.edu"})
@@ -651,3 +656,95 @@ assert a.call("/api/admin/smtp_setup", {"host": "bad host", "user": "u@x.com", "
 assert a.call("/api/admin/smtp_setup", {"host": "smtp.gmail.com", "user": "nope", "password": "p"})[0] == 400
 assert os.environ.get("SMTP_USER") == saved                                            # 틀린 값은 저장되지 않음
 print("메일 설정 창 OK")
+
+frank = Client()
+assert frank.call("/api/login", {"username": "frank", "password": "secret1"})[0] == 200
+# 구글 시트 기록: Apps Script 웹 앱 대신 가짜 서버를 띄워 무엇을 보내는지 확인한다
+from http.server import BaseHTTPRequestHandler
+got = []
+hook = {"answer": None}
+
+
+class Hook(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):                     # 진짜처럼 302 로 다른 주소에 넘기고, 그 주소를 GET 으로 받게 한다
+        got.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+        self.send_response(302)
+        self.send_header("Location", "/echo")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def do_GET(self):
+        body = hook["answer"] if hook["answer"] is not None else json.dumps({"ok": True, "url": "https://docs.google.com/spreadsheets/d/X"}).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+hsrv = ThreadingHTTPServer(("127.0.0.1", 0), Hook)
+threading.Thread(target=hsrv.serve_forever, daemon=True).start()
+sev = {"title": "시트 시험", "deadline": dl, "fields": [{"label": "메모", "type": "text"}, {"label": "동의", "type": "checkbox"}, {"label": "간식", "type": "multi", "options": ["빵", "음료"]}]}
+assert a.call("/api/admin/event_save", sev)[0] == 200
+sx = [e for e in a.call("/api/admin/events")[1]["events"] if e["title"] == "시트 시험"][0]
+assert a.call("/api/admin/events")[1]["sheets_ready"] is False and sx["sheet"] is None
+council.sheet_later(1)                                                    # 연결을 설정하지 않았으면 아무 일도 없다
+assert not council._sheet_pending and not got
+assert a.call("/api/admin/sheet_sync", {"id": sx["id"]})[0] == 400
+assert frank.call("/api/admin/sheet_sync", {"id": sx["id"]})[0] == 403
+assert "sheet" not in json.dumps(Client().call("/api/events")[1])           # 시트 정보는 관리자에게만
+
+os.environ.update(COUNCIL_SHEET_HOOK=f"http://127.0.0.1:{hsrv.server_port}/exec", COUNCIL_SHEET_SECRET="s3cret")
+try:
+    assert b.call("/api/apply", {"event_id": sx["id"], "answers": {"0": "=1+1", "1": True, "2": ["음료", "빵"]}})[0] == 200
+    with council.connect() as c:
+        eid = council.id_of(c, "events", sx["id"])
+    got.clear()
+    assert council.sheet_sync(eid) == ""
+    p = got[-1]
+    assert p["secret"] == "s3cret" and p["key"] == sx["id"] and p["title"] == "시트 시험 신청"
+    assert p["rows"][0] == ["신청 시각", "수정 시각", "이름", "학번", "이메일", "전화번호", "학생회비", "메모", "동의", "간식"]
+    assert p["rows"][1][2:4] == ["bob", "2024000002"] and p["rows"][1][7:] == ["=1+1", "예", "빵, 음료"], p["rows"][1]
+    assert b.call("/api/apply_cancel", {"event_id": sx["id"]})[0] == 200
+    assert council.sheet_sync(eid) == "" and len(got[-1]["rows"]) == 1                    # 취소하면 줄이 빠진다
+    sh = [e for e in a.call("/api/admin/events")[1]["events"] if e["id"] == sx["id"]][0]["sheet"]
+    assert sh["url"].endswith("/X") and sh["error"] == "" and sh["synced_at"]
+    assert a.call("/api/admin/sheet_sync", {"id": sx["id"]})[0] == 200
+    # 스크립트가 거절하거나 엉뚱한 답(로그인 화면 등)을 주면 오류가 남고, 신청은 그대로 저장된다
+    hook["answer"] = json.dumps({"error": "secret"}).encode()
+    assert b.call("/api/apply", {"event_id": sx["id"], "answers": {"0": "x", "1": False, "2": []}})[0] == 200
+    assert "secret" in council.sheet_sync(eid)
+    hook["answer"] = b"<html>login</html>"
+    assert "모든 사용자" in council.sheet_sync(eid)
+    assert [e for e in a.call("/api/admin/events")[1]["events"] if e["id"] == sx["id"]][0]["sheet"]["error"]
+    assert a.call("/api/admin/sheet_sync", {"id": sx["id"]})[0] == 502
+    hook["answer"] = None
+    assert council.sheet_sync(eid) == "" and len(got[-1]["rows"]) == 2                    # 다음에 성공하면 맞춰지고 오류는 지워진다
+    assert [e for e in a.call("/api/admin/events")[1]["events"] if e["id"] == sx["id"]][0]["sheet"]["error"] == ""
+finally:
+    os.environ.pop("COUNCIL_SHEET_HOOK")
+    hsrv.shutdown()
+print("구글 시트 OK")
+
+# 검색 엔진용 robots.txt · sitemap.xml
+st, body = Client().call("/robots.txt", raw=True)
+assert st == 200 and b"Disallow: " + council.PREFIX.encode() + b"/admin" in body and b"sitemap.xml" in body
+st, body = Client().call("/sitemap.xml", raw=True)
+assert st == 200 and body.startswith(b"<?xml") and b"<loc>" + (council.ORIGIN + council.PREFIX).encode() + b"/</loc>" in body and b"<!--" not in body
+print("사이트맵 OK")
+
+# 마이페이지 · 탈퇴
+council.connect().execute("DELETE FROM email_codes").connection.commit()
+st, d = new_user("secret1", "zed@skku.edu", mail_code("zed@skku.edu")[1], username="zed", student_id="2024000555")
+assert st == 200, d
+zed = Client()
+assert zed.call("/api/login", {"username": "zed", "password": "secret1"})[0] == 200
+st, d = zed.call("/api/mypage")
+assert st == 200 and d["loans"] == [] and d["applications"] == [] and Client().call("/api/mypage")[0] == 401
+assert zed.call("/api/withdraw", {"password": "wrong1"})[0] == 401
+assert a.call("/api/withdraw", {"password": "secret1"})[0] == 403                          # 관리자는 탈퇴 불가
+assert zed.call("/api/withdraw", {"password": "secret1"})[0] == 200
+assert zed.call("/api/me")[1]["user"] is None and Client().call("/api/login", {"username": "zed", "password": "secret1"})[0] == 401
+print("마이페이지 OK")

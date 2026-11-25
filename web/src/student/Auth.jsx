@@ -1,8 +1,8 @@
 // 로그인 · 가입 · 계정 찾기 · 새 비밀번호 · QR 스캔 결과
 import {useEffect, useState} from 'react';
 import {Center, VStack, HStack, Card, Heading, Text, TextInput, CheckboxInput, Button, Link, EmptyState, Spinner} from '../ui/ax.js';
-import {User, Lock, Mail, Phone, IdCard, Check, CheckCircle2, Undo2, Ban, AlertCircle, MailCheck} from 'lucide-react';
-import {api, toast} from '../lib/common.js';
+import {User, Lock, Mail, Phone, IdCard, Check, CheckCircle2, Undo2, Ban, AlertCircle, MailCheck, Clock} from 'lucide-react';
+import {api, toast, koStamp} from '../lib/common.js';
 import {useMe, goNext} from './parts.jsx';
 
 function Brand() {
@@ -111,12 +111,13 @@ export function Signup({q}) {
       <div className="doc consent">
         <table><tbody>
           <tr><th>수집 항목</th><td>아이디, 비밀번호, 이름, 학번, 이메일, 전화번호</td></tr>
-          <tr><th>이용 목적</th><td>회원 가입 및 관리(본인 식별·인증, 회원자격 유지·관리, 고지·통지, 고충처리), 서비스 제공(물품 대여·반납, 세미나실 예약, 행사 신청 관리)</td></tr>
+          <tr><th>이용 목적</th><td>회원 가입 및 관리(본인 식별·인증, 회원자격 유지·관리, 고지·통지, 고충처리), 서비스 제공(물품 대여·반납, 세미나실 예약, 행사 신청 관리. 행사 신청 내용은 학생회의 구글 시트에도 기록)</td></tr>
           <tr><th>보유 기간</th><td>회원 탈퇴 시까지</td></tr>
         </tbody></table>
         <Text type="supporting" color="secondary" as="p">동의를 거부할 수 있습니다. 다만 동의하지 않으면 회원 가입과 서비스 이용이 제한됩니다. 자세한 내용은 <Link href="#/privacy" target="_blank">개인정보 처리방침</Link>에서 확인할 수 있습니다.</Text>
       </div>
       <CheckboxInput label="개인정보 수집·이용에 동의합니다 (필수)" value={agree} onChange={setAgree} />
+      <Text type="supporting" color="secondary" as="p">가입하면 <Link href="#/terms" target="_blank">이용약관</Link>에 동의하는 것으로 봅니다.</Text>
       <VStack gap={2} hAlign="stretch">
         <Text type="supporting" color="secondary">새 공지가 올라오면 이메일로 알려 드립니다. 받을 공지를 골라 주십시오. 나중에 설정에서 바꿀 수 있습니다.</Text>
         <CheckboxInput label="학과 공지 메일 받기 (선택)" value={mailDept} onChange={setMailDept} />
@@ -189,24 +190,33 @@ export function Logout() {
 
 // QR 을 찍으면 들어오는 곳: 대여 · 반납 · 남이 쓰는 중
 const SCAN = {
-  borrowed: [CheckCircle2, '대여했습니다', '다 쓰고 같은 QR을 한 번 더 찍으면 반납됩니다.', 'ok'],
-  returned: [Undo2, '반납이 완료됐습니다', '이용해 주셔서 감사합니다.', 'ok'],
-  in_use: [Ban, '다른 사람이 쓰고 있습니다', '반납된 뒤에 다시 찍어 주십시오.', 'mute'],
+  borrowed: [CheckCircle2, '대여 완료', '다 쓰고 같은 QR을 한 번 더 찍으면 반납됩니다.', 'ok'],
+  returned: [Undo2, '반납 완료', '이용해 주셔서 감사합니다.', 'ok'],
+  in_use: [Ban, '다른 사람이 대여 중입니다', '반납된 뒤에 다시 찍어 주십시오.', 'mute'],
 };
 const scanned = new Map();      // 같은 화면이 두 번 그려져도 한 번만 서버에 보낸다
 export function Scan({code}) {
   const [res, setRes] = useState(null);
   useEffect(() => {
-    history.replaceState(null, '', '#/');      // 새로고침하면 반납돼 버리니 주소에서 QR 코드를 지운다
+    history.replaceState(null, '', '#/scan');      // 새로고침하면 반납돼 버리니 주소에서 QR 코드를 지운다
     if (!scanned.has(code)) scanned.set(code, api('scan', {code}).then(d => ({d}), e => ({err: e.message})));
     scanned.get(code).then(setRes);
   }, [code]);
-  if (!res) return <Center axis="both" padding={10}><Spinner label="잠시만 기다려 주십시오" /></Center>;
-  const [Ic, title, desc, tone] = res.err ? [AlertCircle, res.err, '', 'mute'] : SCAN[res.d.result];
-  return <Center axis="both" padding={6}><Card padding={8} className="auth-col enter">
-    <EmptyState icon={<span className={'scan-ic pop ' + tone}><Ic size={36} strokeWidth={2} /></span>} title={title}
-      description={[res.d?.item, desc].filter(Boolean).join(' · ')}
-      actions={<Button label={res.err ? '로비로' : '대여 화면으로'} variant="primary" size="lg" href={res.err ? '#/' : '#/items'} />} />
-  </Card></Center>;
+  if (!res) return <div className="scan"><Spinner label="잠시만 기다려 주십시오" /></div>;
+  const [Ic, title, desc, tone] = res.err ? [AlertCircle, '처리하지 못했습니다', res.err, 'mute'] : SCAN[res.d.result];
+  const d = res.d || {};
+  return <div className="scan">
+    <span className={'scan-ic pop ' + tone}><Ic size={44} strokeWidth={2} /></span>
+    <Heading level={1}>{title}</Heading>
+    {d.item && <div className="scan-ticket enter">
+      <span className="scan-name">{d.item}</span>
+      {d.due && <span className="scan-due"><Clock size={15} />{koStamp(d.due)}까지 반납</span>}
+    </div>}
+    <Text color="secondary">{desc}</Text>
+    <VStack gap={2} hAlign="stretch" className="scan-acts">
+      <Button label={res.err ? '로비로' : '내 대여 현황'} variant="primary" size="lg" href={res.err ? '#/' : '#/items'} />
+      {!res.err && <Button label="로비로" variant="ghost" size="lg" href="#/" />}
+    </VStack>
+  </div>;
 }
 

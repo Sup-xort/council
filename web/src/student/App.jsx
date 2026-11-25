@@ -1,18 +1,20 @@
 // 학생 사이트의 틀: Astryx 앱 틀 + 위쪽 메뉴. 폰에서는 메뉴가 서랍으로 들어간다.
 import {useEffect, useState} from 'react';
 import {AppShell, TopNav, TopNavHeading, TopNavItem, NavIcon, Button, IconButton, HStack, Text} from '../ui/ax.js';
-import {Home, Megaphone, Umbrella, CalendarClock, PartyPopper, Settings2, LogOut, Bell} from 'lucide-react';
+import {Home, Megaphone, Umbrella, CalendarClock, PartyPopper, Settings2, UserRound} from 'lucide-react';
 import {api} from '../lib/common.js';
-import {useHash, ThemeButton, useAsk} from '../ui/base.jsx';
+import {useHash, ThemeButton} from '../ui/base.jsx';
 import {useNarrow} from '../ui/narrow.js';
 import {MeCtx, goLogin, SEMINAR} from './parts.jsx';
 import {Login, Signup, Forgot, Reset, Logout, Scan} from './Auth.jsx';
 import Lobby from './Lobby.jsx';
 import Reserve from './Reserve.jsx';
 import Privacy from './Privacy.jsx';
-import {Items, Events, Event, EventApply, Notices, Notice, Settings} from './Pages.jsx';
+import Terms from './Terms.jsx';
+import {Items, Events, Event, EventApply, Notices, Notice} from './Pages.jsx';
+import MyPage from './MyPage.jsx';
 
-let resetToken = '';
+let resetToken = '', scanCode = '';
 
 // [주소 모양, 화면, 로그인 필요]
 const ROUTES = [
@@ -22,7 +24,8 @@ const ROUTES = [
   [/^\/reset\/([\w-]+)$/, ({m}) => { resetToken = m[1]; return <Reset token={m[1]} />; }],
   [/^\/reset$/, () => { if (resetToken) return <Reset token={resetToken} />; location.hash = '#/forgot'; return null; }],
   [/^\/logout$/, () => <Logout />],
-  [/^\/q\/([a-z0-9]+)$/, ({m}) => <Scan code={m[1]} />, true],
+  [/^\/q\/([a-z0-9]+)$/, ({m}) => { scanCode = m[1]; return <Scan code={m[1]} />; }, true],
+  [/^\/scan$/, () => { if (scanCode) return <Scan code={scanCode} />; location.hash = '#/'; return null; }, true],
   [/^\/$/, () => <Lobby />],
   [/^\/items$/, () => <Items />, true],
   ...(SEMINAR ? [[/^\/reserve$/, ({q}) => <Reserve q={q} />, true]] : []),
@@ -30,7 +33,9 @@ const ROUTES = [
   [/^\/event\/([0-9a-f]{16})\/apply$/, ({m}) => <EventApply id={m[1]} />, true],
   [/^\/event\/([0-9a-f]{16})$/, ({m, q}) => <Event id={m[1]} q={q} />, true],
   [/^\/privacy$/, () => <Privacy />],
-  [/^\/settings$/, () => <Settings />, true],
+  [/^\/terms$/, () => <Terms />],
+  [/^\/me$/, () => <MyPage />, true],
+  [/^\/settings$/, () => { location.hash = '#/me'; return null; }, true],
   [/^\/notices$/, () => <Notices />],
   [/^\/notice\/([0-9a-f]{16})$/, ({m}) => <Notice id={m[1]} />],
 ];
@@ -41,14 +46,14 @@ const TABS = [['#/', '로비', Home], ['#/notices', '공지', Megaphone, '/notic
 function Footer() {
   return <footer className="foot">
     <Text type="supporting" color="secondary">© {new Date().getFullYear()} SWITCH · 반도체융합공학과 학생회</Text>
-    <a href="#/privacy">개인정보 처리방침</a>
+    <div className="foot-links"><a href="#/terms">이용약관</a><a href="#/privacy">개인정보 처리방침</a></div>
+    <span className="logo-mark foot-mark" aria-hidden="true" />
   </footer>;
 }
 
 function Nav({path, me}) {
   const isAdmin = me && (me.role === 'admin' || me.role === 'super');
-  const small = useNarrow(), ask = useAsk();
-  const out = async () => { if (await ask.confirm('로그아웃하시겠습니까?', {actionLabel: '로그아웃'})) location.hash = '#/logout'; };
+  const small = useNarrow();
   return <TopNav label="메뉴"
     heading={<TopNavHeading heading={<span className="logo-mark big" role="img" aria-label="SWITCH" />} headingHref="#/" />}
     centerContent={small ? undefined : <>{TABS.map(([h, t, Ic, pre]) => {
@@ -56,16 +61,11 @@ function Nav({path, me}) {
       return <TopNavItem key={h} label={t} href={h} isSelected={on} icon={<Ic size={16} />} />;
     })}</>}
     endContent={<HStack gap={2} vAlign="center">
-      {me ? (small ? <>
-        {isAdmin && <IconButton label="관리 사이트" tooltip="관리 사이트" variant="ghost" href="admin" icon={<Settings2 size={18} />} />}
-        <IconButton label="메일 알림 설정" tooltip="메일 알림 설정" variant="ghost" href="#/settings" icon={<Bell size={18} />} />
-        <IconButton label={`${me.name} 로그아웃`} tooltip="로그아웃" variant="ghost" onClick={out} icon={<LogOut size={18} />} />
-      </> : <>
-        {isAdmin && <Button label="관리 사이트" variant="ghost" href="admin" icon={<Settings2 size={16} />} />}
-        <Button label="메일 알림" variant="ghost" href="#/settings" icon={<Bell size={16} />} />
-        <Text type="supporting" color="secondary">{me.name}</Text>
-        <Button label="로그아웃" variant="ghost" href="#/logout" />
-      </>) : <Button label="로그인" variant="primary" href="#/login" />}
+      {me ? <>
+        {isAdmin && (small ? <IconButton label="관리 사이트" tooltip="관리 사이트" variant="ghost" href="admin" icon={<Settings2 size={18} />} />
+          : <Button label="관리 사이트" variant="ghost" href="admin" icon={<Settings2 size={16} />} />)}
+        <Button className="me-chip" label={small ? me.name : `${me.name}(${me.student_id})`} variant="secondary" size="sm" href="#/me" icon={<UserRound size={14} />} />
+      </> : <Button label="로그인" variant="primary" href="#/login" />}
       <ThemeButton />
     </HStack>} />;
 }
@@ -88,7 +88,7 @@ export default function App() {
   }
   if (!page && !ROUTES.some(([re]) => re.test(path))) setTimeout(() => { location.hash = '#/'; });
   const withTabs = narrow && me && !BARE.test(path);
-  const body = <div className={withTabs ? 'page has-tabs' : 'page'} key={path}>{page}<Footer /></div>;
+  const body = <div className={withTabs ? 'page has-tabs' : 'page'} key={path}><div className="page-main">{page}</div><Footer /></div>;
   const tabs = withTabs && <nav className="tabbar" aria-label="메뉴">{TABS.map(([h, t, Ic, pre]) => {
     const on = path === h.slice(1) || (h !== '#/' && path.startsWith(pre || h.slice(1)));
     return <a key={h} href={h} aria-current={on ? 'page' : undefined} className={on ? 'on' : ''} aria-label={t}><Ic size={22} strokeWidth={on ? 2.4 : 1.8} /><span>{t}</span></a>;

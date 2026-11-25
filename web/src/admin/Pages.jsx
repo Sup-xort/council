@@ -1,6 +1,6 @@
 // 관리 사이트 화면들 (글쓰기 둘은 Write.jsx)
 import {useRef, useState} from 'react';
-import {Card, Heading, Text, HStack, VStack, Grid, Button, TextInput, Selector, Badge, Banner, List, ListItem, EmptyState, Skeleton, Switch} from '../ui/ax.js';
+import {Card, Heading, Text, HStack, VStack, Grid, Button, TextInput, Selector, Badge, Banner, List, ListItem, EmptyState, Skeleton, Switch, Link} from '../ui/ax.js';
 import {Plus, Printer} from 'lucide-react';
 import {api, toast, josa, iso, koDate, koTime, koRange, koStamp, koSpan, toDate} from '../lib/common.js';
 import {useAsk, useLoad} from '../ui/base.jsx';
@@ -194,6 +194,11 @@ export function Events({path}) {
   const {data: d, reload} = useLoad(() => api('admin/events'), []);
   const head = <Head title="행사" tools={<Button label="새 행사" variant="primary" icon={<Plus size={16} />} href="#/event/new" />} />;
   if (!d) return <Page>{head}<Loading /></Page>;
+  const ready = d.sheets_ready;
+  const sheetCol = ready || d.events.some(e => e.sheet?.url) ? [{k: 'sheet', label: '구글 시트', filter: 'choice',
+    val: r => r.sheet?.error ? '기록 실패' : r.sheet?.url ? '기록 중' : '아직 없음',
+    cell: r => r.sheet?.error ? <span title={r.sheet.error}><Tag tone="warn">기록 실패</Tag></span>
+      : r.sheet?.url ? <Link href={r.sheet.url} target="_blank" rel="noopener">시트 열기</Link> : <Text type="supporting" color="secondary">아직 없음</Text>}] : [];
   return <Page>{head}
     <DataTable path={path} rows={d.events} onSave={saver('events', reload)} search="행사 이름으로 찾기" empty="행사가 없습니다."
       columns={[
@@ -205,11 +210,12 @@ export function Events({path}) {
         {k: 'state', label: '상태', filter: 'choice', val: r => r.closed ? '마감' : r.capacity && r.n >= r.capacity ? '정원 마감' : '모집 중',
           cell: r => r.closed ? <Tag>마감</Tag> : r.capacity && r.n >= r.capacity ? <Tag>정원 마감</Tag> : <Tag tone="ok">모집 중</Tag>},
         {k: 'dues_only', label: '납부자만 신청', filter: 'choice', edit: 'check', val: r => r.dues_only ? '납부자만' : '모두', cell: r => <Check on={r.dues_only} label={r.dues_only ? '납부자만' : '모두'} />},
-        {k: 'on_lobby', label: '로비', filter: 'choice', edit: 'check', val: r => r.on_lobby ? '보임' : '숨김', cell: r => <Check on={r.on_lobby} label={r.on_lobby ? '보임' : '숨김'} />},
-        {k: '_', label: '', act: () => [['apps', '신청자'], ['edit', '수정'], ['del', '삭제', 'destructive']]},
+        ...sheetCol,
+        {k: '_', label: '', act: () => [['apps', '신청자'], ...(ready ? [['sheet', '시트 다시 쓰기']] : []), ['edit', '수정'], ['del', '삭제', 'destructive']]},
       ]}
       onAction={async (a, r) => {
         if (a === 'apps') location.hash = `#/apps?event=${r.id}`;
+        if (a === 'sheet') { await api('admin/sheet_sync', {id: r.id}); toast('시트에 다시 썼습니다'); reload(); }
         if (a === 'edit') location.hash = `#/event/${r.id}`;
         if (a === 'del' && await ask.confirm(`'${r.title}' 행사를 삭제하시겠습니까?`, {description: `신청 ${r.n}건도 함께 삭제됩니다.`, actionLabel: '삭제', danger: true})) {
           await api('admin/event_del', {id: r.id}); toast('삭제했습니다'); reload();
@@ -271,7 +277,6 @@ export function Notices({path}) {
           cell: r => <Tag tone={r.kind === 'event' ? 'ok' : 'mine'}>{KIND[r.kind]}</Tag>},
         {k: 'created_at', label: '작성일자', type: 'date', period: true, edit: 'datetime', text: r => koDate(r.created_at)},
         {k: 'author', label: '쓴 사람', filter: 'choice'},
-        {k: 'lobby', label: '로비 맨 위', filter: 'choice', edit: 'check', raw: r => r.on_lobby, val: r => r.on_lobby ? '보임' : '숨김', cell: r => <Check on={r.on_lobby} label={r.on_lobby ? '보임' : '숨김'} />},
         {k: 'ev', label: '연결된 행사', val: r => r.event?.title || ''},
         {k: '_', label: '', act: () => [['view', '보기'], ['edit', '수정'], ['del', '삭제', 'destructive']]},
       ]}

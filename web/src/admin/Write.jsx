@@ -26,12 +26,12 @@ export function NoticeWrite({id}) {
   const {data} = useLoad(() => Promise.all([api('admin/events'), api('admin/notices'), isNew ? null : api('admin/notice?id=' + id)]), [id]);
   if (!data) return <Page><Head title={isNew ? '공지 쓰기' : '공지 수정'} /><Loading /></Page>;
   return <NoticeForm key={id} isNew={isNew} id={id} evs={data[0].events} nts={data[1].notices}
-    n={data[2] ? data[2].notice : {kind: 'event', title: '', summary: '', body: '', chips: [], event_id: null, on_lobby: false}} />;
+    n={data[2] ? data[2].notice : {kind: 'event', title: '', summary: '', body: '', chips: [], event_id: null}} />;
 }
 function NoticeForm({isNew, id, evs, nts, n}) {
   const ed = useRef(null);
   const [kind, setKind] = useState(n.kind), [title, setTitle] = useState(n.title), [summary, setSummary] = useState(n.summary);
-  const [onLobby, setOnLobby] = useState(!!n.on_lobby), [eventId, setEventId] = useState(n.event_id ? String(n.event_id) : '');
+  const [eventId, setEventId] = useState(n.event_id ? String(n.event_id) : '');
   const [chips, setChips] = useState(() => n.chips.map(c => ({...c, target: String(c.target)})));
   const [busy, setBusy] = useState(false);
   const others = nts.filter(x => x.id !== n.id);
@@ -49,7 +49,7 @@ function NoticeForm({isNew, id, evs, nts, n}) {
     if (ed.current.tooLong) return toast('본문은 2만 자까지 쓸 수 있습니다');
     setBusy(true);
     try {
-      await api('admin/notice_save', {id: isNew ? undefined : n.id, kind, title, summary, body: ed.current.value, event_id: eventId || null, on_lobby: onLobby, chips});
+      await api('admin/notice_save', {id: isNew ? undefined : n.id, kind, title, summary, body: ed.current.value, event_id: eventId || null, chips});
       ed.current.clearDraft(); toast(isNew ? '올렸습니다' : '저장했습니다'); location.hash = '#/notices';
     } catch {} finally { setBusy(false); }
   };
@@ -67,7 +67,6 @@ function NoticeForm({isNew, id, evs, nts, n}) {
             <SegmentedControl label="분류" value={kind} onChange={setKind} layout="fill">
               {Object.entries(KIND).reverse().map(([k, t]) => <SegmentedControlItem key={k} value={k} label={t} />)}</SegmentedControl>
             <Text type="supporting" color="secondary">{kind === 'event' ? '행사 공지는 로그인하지 않은 사람도 읽을 수 있습니다.' : '학과 공지는 로그인한 사람만 읽을 수 있습니다.'}</Text></VStack>
-          <Switch label="로비 맨 위에 보이기" description="로그인하지 않은 사람도 이 글을 읽을 수 있게 됩니다" value={onLobby} onChange={setOnLobby} />
           <Selector label="신청 현황을 같이 보여 줄 행사" options={[{value: 'none', label: '없음'}, ...opts(evs.map(e => [e.id, e.title]))]}
             value={eventId || 'none'} onChange={v => setEventId(v === 'none' ? '' : v)} />
         </VStack></Card>
@@ -97,7 +96,7 @@ export function EventWrite({id}) {
   if (id !== 'new' && !data) return <Page><Head title="행사 수정" /><Loading /></Page>;
   const found = data?.events.find(e => e.id === id);
   if (id !== 'new' && !found) { toast('없는 행사입니다'); location.replace('#/events'); return null; }
-  return <EventForm key={id} id={id} e={found || {title: '', body: '', starts_at: '', deadline: '', on_lobby: true, fields: [], n: 0}} isNew={!found} />;
+  return <EventForm key={id} id={id} e={found || {title: '', body: '', starts_at: '', deadline: '', fields: [], n: 0}} isNew={!found} />;
 }
 function Question({f, i, n, upd, move, dup, del, list}) {
   const focus = sel => setTimeout(() => list.current?.querySelector(`[data-q="${i}"] ${sel}`)?.focus(), 0);
@@ -130,7 +129,7 @@ function Question({f, i, n, upd, move, dup, del, list}) {
 function EventForm({id, e, isNew}) {
   const ed = useRef(null), list = useRef(null);
   const [v, setV] = useState({title: e.title, starts_at: e.starts_at || '', deadline: e.deadline || '', capacity: e.capacity ? String(e.capacity) : '',
-    show_count: e.show_count !== 0, on_lobby: !!e.on_lobby, dues_only: !!e.dues_only});
+    show_count: e.show_count !== 0, dues_only: !!e.dues_only});
   const set = k => x => setV(o => ({...o, [k]: x}));
   const [fields, setFields] = useState(() => e.fields.map((f, i) => ({...f, options: [...(f.options || [])], _k: i})));
   const [busy, setBusy] = useState(false);
@@ -147,7 +146,7 @@ function EventForm({id, e, isNew}) {
     setBusy(true);
     try {
       await api('admin/event_save', {id: isNew ? undefined : e.id, title: v.title, body: ed.current.value, starts_at: v.starts_at, deadline: v.deadline,
-        on_lobby: v.on_lobby, capacity: v.capacity || null, show_count: v.show_count, dues_only: v.dues_only,
+        capacity: v.capacity || null, show_count: v.show_count, dues_only: v.dues_only,
         fields: fields.map(({_k, ...f}) => ({...f, options: hasOpts(f) ? f.options.map(o => o.trim()).filter(Boolean) : []}))});
       ed.current.clearDraft(); toast('저장했습니다'); location.hash = '#/events';
     } catch {} finally { setBusy(false); }
@@ -165,7 +164,6 @@ function EventForm({id, e, isNew}) {
           <When label="신청 마감" value={v.deadline} onChange={set('deadline')} required />
           <TextInput label="정원" description="비워 두면 제한 없음" value={v.capacity} onChange={set('capacity')} inputMode="numeric" placeholder="제한 없음" />
           <Switch label="신청 인원을 학생에게 보이기" description="끄면 인원 대신 '신청 받는 중'만 보입니다" value={v.show_count} onChange={set('show_count')} />
-          <Switch label="로비에 보이기" value={v.on_lobby} onChange={set('on_lobby')} />
           <Switch label="학생회비 납부자만 신청 받기" description="미납부자에게는 신청서 대신 안내 문구가 보입니다. 회원 메뉴에서 납부자를 표시하십시오." value={v.dues_only} onChange={set('dues_only')} />
         </VStack></Card>
         <Card padding={4}><VStack gap={3}>

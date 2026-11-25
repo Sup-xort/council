@@ -22,6 +22,7 @@ import sys
 import threading
 import time
 import html as htmllib
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from datetime import date, datetime, timedelta
 from email.message import EmailMessage
@@ -86,6 +87,8 @@ CREATE TABLE IF NOT EXISTS notices(id INTEGER PRIMARY KEY, kind TEXT NOT NULL CH
   title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', chips TEXT NOT NULL DEFAULT '[]',
   event_id INTEGER REFERENCES events ON DELETE SET NULL, on_lobby INTEGER NOT NULL DEFAULT 0,
   author_id INTEGER REFERENCES users ON DELETE SET NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS sheets(event_id INTEGER PRIMARY KEY REFERENCES events ON DELETE CASCADE, sheet_id TEXT NOT NULL DEFAULT '',
+  url TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', synced_at TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS kind_hours(kind TEXT PRIMARY KEY, hours INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS pulled(src TEXT PRIMARY KEY, at TEXT NOT NULL);
@@ -637,6 +640,27 @@ def logout(c, me, b, q):
     return {"ok": True}, ""
 
 
+def mypage(c, me, b, q):
+    loans = c.execute("""SELECT l.out_at, l.in_at, i.kind, i.num, i.name FROM loans l JOIN items i ON i.id=l.item_id
+                         WHERE l.user_id=? ORDER BY l.id DESC""", (me["id"],)).fetchall()
+    apps = c.execute("""SELECT e.pid, e.title, e.deadline, a.updated_at FROM applications a JOIN events e ON e.id=a.event_id
+                        WHERE a.user_id=? ORDER BY a.updated_at DESC""", (me["id"],)).fetchall()
+    rooms = c.execute("""SELECT r.date, r.hour, m.name AS room FROM reservations r JOIN rooms m ON m.id=r.room_id
+                         WHERE r.user_id=? ORDER BY r.date DESC, r.hour DESC""", (me["id"],)).fetchall()
+    return {"loans": [dict(r) for r in loans], "applications": [dict(r) for r in apps], "reservations": [dict(r) for r in rooms]}
+
+
+def withdraw(c, me, b, q):
+    if me["role"] != "user":
+        raise Err(403, "관리자 계정은 탈퇴할 수 없습니다. 관리자 권한을 먼저 넘기거나 내려놓아야 합니다")
+    if not check_pw(str(b.get("password", "")), me["pw"]):
+        raise Err(401, "비밀번호가 맞지 않습니다")
+    if c.execute("SELECT 1 FROM items WHERE borrower_id=?", (me["id"],)).fetchone():
+        raise Err(409, "빌린 물품을 먼저 반납해 주십시오")
+    c.execute("DELETE FROM users WHERE id=?", (me["id"],))
+    return {"ok": True}, ""
+
+
 def get_me(c, me, b, q):
     return {"user": user_out(me) if me else None, "signup_open": signup_open(c)}
 
@@ -652,12 +676,36 @@ def scan(c, me, b, q):
     if c.execute("UPDATE items SET borrower_id=?, borrowed_at=? WHERE id=? AND borrower_id IS NULL",
                  (me["id"], t, it["id"])).rowcount:
         c.execute("INSERT INTO loans(item_id,user_id,out_at) VALUES(?,?,?)", (it["id"], me["id"], t))
-        return {"result": "borrowed", "item": it["name"]}
+        loan_mail(c, me, it, t)
+        return {"result": "borrowed", "item": it["name"], "due": due_info(t, hours_of(rules(c), it["kind"] or it["name"]))[0]}
     if c.execute("UPDATE items SET borrower_id=NULL, borrowed_at=NULL WHERE id=? AND borrower_id=?",
                  (it["id"], me["id"])).rowcount:
         c.execute("UPDATE loans SET in_at=? WHERE item_id=? AND user_id=? AND in_at IS NULL", (t, it["id"], me["id"]))
         return {"result": "returned", "item": it["name"]}
     return {"result": "in_use", "item": it["name"]}
+
+
+def ko_when(iso):
+    d = datetime.fromisoformat(iso)
+    return f"{d.month}월 {d.day}일({'월화수목금토일'[d.weekday()]}) {d:%H:%M}"
+
+
+def eul(word):
+    ch = word[-1:]
+    return "을" if "가" <= ch <= "힣" and (ord(ch) - 0xAC00) % 28 else "를" if "가" <= ch <= "힣" else "을(를)"
+
+
+def loan_mail(c, me, it, t):
+    """대여가 되면 빌린 사람에게 무엇을 언제까지 돌려줘야 하는지 메일로 알린다."""
+    if not mail_ready() or not me["email"]:
+        return
+    due = due_info(t, hours_of(rules(c), it["kind"] or it["name"]))[0]
+    link = f"{ORIGIN}{PREFIX}/#/items"
+    intro = f"{me['name']} 님, {ko_when(t)}에 {it['name']}{eul(it['name'])} 대여했습니다.\n{ko_when(due)}까지 반납해 주십시오."
+    note = "다 쓰고 물품의 QR을 한 번 더 찍으면 반납됩니다.\n직접 대여하지 않았다면 학생회에 알려 주십시오."
+    mail_later(me["email"], f"[SWITCH] {it['name']} 대여 완료",
+               f"{intro}\n\n{note}\n\n대여 현황 보기: {link}",
+               system_page("물품 대여 완료", intro, button=("대여 현황 보기", link), note=note))
 
 
 def items(c, me, b, q):
@@ -1097,7 +1145,7 @@ def gauge(c, e):
 
 
 def events(c, me, b, q):
-    rows = c.execute("SELECT * FROM events WHERE on_lobby=1 ORDER BY deadline DESC").fetchall()
+    rows = c.execute("SELECT * FROM events ORDER BY deadline DESC").fetchall()
     mine = {r[0] for r in c.execute("SELECT event_id FROM applications WHERE user_id=?", (me["id"],))} if me else set()
     return {"events": [dict(event_out(c, e), applied=e["id"] in mine, gauge=gauge(c, e)) for e in rows]}
 
@@ -1161,6 +1209,7 @@ def apply(c, me, b, q):
     c.execute("""INSERT INTO applications(event_id,user_id,updated_at,created_at) VALUES(?,?,?,?)
                  ON CONFLICT(event_id,user_id) DO UPDATE SET updated_at=excluded.updated_at""", (e["id"], me["id"], t, t))
     save_answers(c, c.execute("SELECT id FROM applications WHERE event_id=? AND user_id=?", (e["id"], me["id"])).fetchone()["id"], fields, ans)
+    sheet_later(e["id"])
     return {"ok": True}
 
 
@@ -1172,6 +1221,7 @@ def apply_cancel(c, me, b, q):
         raise Err(403, "마감된 뒤에는 신청을 취소할 수 없습니다. 학생회에 문의해 주십시오")
     if not c.execute("DELETE FROM applications WHERE event_id=? AND user_id=?", (e["id"], me["id"])).rowcount:
         raise Err(404, "신청한 내용이 없습니다")
+    sheet_later(e["id"])
     return {"ok": True}
 
 
@@ -1198,7 +1248,7 @@ def check_fields(fields):
 def admin_events(c, me, b, q):
     rows = c.execute("""SELECT e.*, (SELECT COUNT(*) FROM applications a WHERE a.event_id=e.id) AS n
                         FROM events e ORDER BY e.id DESC""").fetchall()
-    return {"events": [dict(event_out(c, e), n=e["n"]) for e in rows]}   # 관리자에겐 show_count 와 상관없이 실제 n
+    return {"events": [dict(event_out(c, e), n=e["n"], sheet=sheet_out(c, e)) for e in rows], "sheets_ready": sheets_ready()}   # 관리자에겐 show_count 와 상관없이 실제 n
 
 
 def admin_event_save(c, me, b, q):
@@ -1228,6 +1278,7 @@ def admin_event_save(c, me, b, q):
     else:
         eid = c.execute("INSERT INTO events(pid,title,body,starts_at,deadline,on_lobby,capacity,show_count,dues_only) VALUES(?,?,?,?,?,?,?,?,?)", (new_pid(),) + vals).lastrowid
     save_fields(c, eid, fields)
+    sheet_later(eid)
     return {"ok": True}
 
 
@@ -1257,14 +1308,127 @@ def admin_applications(c, me, b, q):
     return out
 
 
+# ── 구글 시트 기록 ──────────────────────────────────────────────────────
+# 학생회 구글 계정에 올려 둔 Apps Script 웹 앱(sheet_script.gs)으로 행사의 신청 전체를 보낸다.
+# 스크립트가 그 계정의 드라이브에 행사마다 시트를 만들고(처음 한 번), 보낼 때마다 내용을 통째로 바꿔 쓴다.
+# 전부 다시 쓰므로 취소·수정·표에서 고친 것도 따로 처리할 필요가 없고, 한 번 실패해도 다음 쓰기에서 맞춰진다.
+# 설정(council.env): COUNCIL_SHEET_HOOK=웹 앱 주소(/exec), COUNCIL_SHEET_SECRET=스크립트에 적은 것과 같은 비밀값
+SHEET_WAIT = 2                          # 신청이 저장되고 나서 시트에 쓰기까지 기다리는 초 (연달아 오는 신청은 한 번에)
+SHEET_RETRY = (10, 60, 300)             # 실패하면 이만큼 기다렸다 다시 시도
+_sheet_lock = threading.Lock()
+_sheet_pending = set()
+
+
+def sheets_ready():
+    return bool(os.environ.get("COUNCIL_SHEET_HOOK") and os.environ.get("COUNCIL_SHEET_SECRET"))
+
+
+def sheet_post(payload):
+    """웹 앱에 보낸다. 구글은 답을 다른 주소로 넘겨(302) 주는데, urllib 이 GET 으로 따라가 답을 받아 온다."""
+    body = json.dumps(dict(payload, secret=os.environ["COUNCIL_SHEET_SECRET"]), ensure_ascii=False).encode()
+    try:
+        with urlopen(Request(os.environ["COUNCIL_SHEET_HOOK"], data=body, headers={"Content-Type": "application/json"}), timeout=60) as r:
+            raw = r.read()
+    except HTTPError as e:
+        raise RuntimeError(f"구글 스크립트 응답 오류({e.code})")
+    try:
+        d = json.loads(raw)
+    except ValueError:
+        raise RuntimeError("구글 스크립트가 알 수 없는 답을 보냈습니다. 웹 앱 배포의 액세스 권한이 '모든 사용자'인지 확인해 주십시오")
+    if not isinstance(d, dict) or d.get("error"):
+        raise RuntimeError("구글 스크립트 오류: " + str((d or {}).get("error", ""))[:200])
+    return d
+
+
+def sheet_rows(c, e):
+    fields = load_fields(c, e["id"])
+    head = ["신청 시각", "수정 시각", "이름", "학번", "이메일", "전화번호", "학생회비"] + [f["label"] for f in fields]
+    apps = c.execute("""SELECT a.id, a.created_at, a.updated_at, u.name, u.student_id, u.email, u.phone, u.dues FROM applications a
+                        JOIN users u ON u.id=a.user_id WHERE a.event_id=? ORDER BY a.id""", (e["id"],)).fetchall()
+    ans = answers_of(c, [a["id"] for a in apps], {e["id"]: fields}, {a["id"]: e["id"] for a in apps})
+    rows = [head]
+    for a in apps:
+        row = [a["created_at"] or a["updated_at"], a["updated_at"], a["name"], a["student_id"], a["email"], a["phone"], "납부" if a["dues"] else "미납부"]
+        for pos, f in enumerate(fields):
+            v = ans[a["id"]][str(pos)]
+            row.append(("예" if v else "아니오") if f["type"] == "checkbox" else ", ".join(v) if f["type"] == "multi" else v)
+        rows.append([str(x) for x in row])      # 스크립트가 서식 있는 텍스트로 넣어 '=' 로 시작해도 수식이 되지 않는다
+    return rows
+
+
+def sheet_sync(eid):
+    """행사의 시트를 (없으면 만들고) 현재 신청으로 맞춘다. 성공하면 "", 실패하면 오류 글을 돌려주고 표에도 남긴다."""
+    with _sheet_lock:
+        c = connect()
+        try:
+            e = c.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
+            if not e:
+                return ""
+            c.execute("INSERT OR IGNORE INTO sheets(event_id) VALUES(?)", (eid,))
+            c.commit()
+            try:
+                d = sheet_post({"key": e["pid"], "title": f"{e['title']} 신청"[:200], "rows": sheet_rows(c, e)})
+                c.execute("UPDATE sheets SET url=?, error='', synced_at=? WHERE event_id=?", (str(d.get("url", "")), stamp(), eid))
+                c.commit()
+                return ""
+            except Exception as ex:
+                msg = (str(ex) or ex.__class__.__name__)[:300]
+                sys.stderr.write(f"시트 기록 실패(행사 {eid}): {msg}\n")
+                c.execute("UPDATE sheets SET error=? WHERE event_id=?", (msg, eid))
+                c.commit()
+                return msg
+        finally:
+            c.close()
+
+
+def sheet_later(eid):
+    """신청이 바뀐 뒤 시트에 반영하도록 맡긴다. 연결을 설정하지 않았으면 아무것도 하지 않는다."""
+    if not sheets_ready() or eid in _sheet_pending:
+        return
+    _sheet_pending.add(eid)
+
+    def run():
+        time.sleep(SHEET_WAIT)
+        _sheet_pending.discard(eid)
+        for wait in SHEET_RETRY + (None,):
+            if not sheet_sync(eid) or wait is None:
+                return
+            time.sleep(wait)
+    threading.Thread(target=run, daemon=True).start()
+
+
+def sheet_out(c, e):
+    r = c.execute("SELECT url, error, synced_at FROM sheets WHERE event_id=?", (e["id"],)).fetchone()
+    return {"url": r["url"], "error": r["error"], "synced_at": r["synced_at"]} if r else None
+
+
+def admin_sheet_sync(c, me, b, q):
+    e = by_pid(c, "events", b.get("id"))
+    if not e:
+        raise Err(404, "없는 행사입니다")
+    if not sheets_ready():
+        raise Err(400, "구글 시트 연결이 아직 설정되지 않았습니다")
+    err = sheet_sync(e["id"])
+    if err:
+        raise Err(502, err)
+    return {"ok": True, "sheet": sheet_out(c, e)}
+
+
 # ── 공지 · 배너 ─────────────────────────────────────────────────────────
 # 행사 공지와 로비 배너에 오른 공지는 비로그인도 읽는다. 나머지 학과 공지는 로그인해야 목록·본문이 보인다.
 
 TABS = ("home", "notices", "events", "reserve", "loans")
 
 
-def readable(me, n):
-    return bool(me) or n["kind"] == "event" or bool(n["on_lobby"])
+def latest_dept(c):
+    return c.execute("SELECT * FROM notices WHERE kind='dept' ORDER BY id DESC LIMIT 1").fetchone()
+
+
+def readable(c, me, n):
+    if me or n["kind"] == "event":
+        return True
+    d = latest_dept(c)
+    return bool(d) and d["id"] == n["id"]
 
 
 def notice_out(c, n, full=False):
@@ -1281,17 +1445,22 @@ def notice_out(c, n, full=False):
 
 
 def banners(c, me, b, q):
-    out = []
-    for n in c.execute("SELECT * FROM notices WHERE on_lobby=1 ORDER BY id DESC"):
-        out.append(dict(notice_out(c, n), type="notice"))
-    for e in c.execute("SELECT * FROM events WHERE on_lobby=1 ORDER BY deadline"):
-        g = gauge(c, e)
-        if g["closed"]:
-            continue
-        out.append({"type": "event", "id": e["pid"], "kind": "event", "title": e["title"],
-                    "summary": e["body"].split("\n", 1)[0][:100], "starts_at": e["starts_at"], "event": g,
-                    "chips": [{"label": "참여 신청", "type": "event", "target": e["pid"]}]})
-    return {"banners": out}
+    evs = c.execute("SELECT * FROM events ORDER BY id DESC").fetchall()
+    ev = next((e for e in evs if not gauge(c, e)["closed"]), evs[0] if evs else None)
+    open_ = bool(ev) and not gauge(c, ev)["closed"]
+    parts = []
+    n = c.execute("SELECT * FROM notices WHERE kind='event' ORDER BY id DESC LIMIT 1").fetchone()
+    if n:
+        parts.append(dict(notice_out(c, n), type="notice"))
+    if ev:
+        parts.append({"type": "event", "id": ev["pid"], "kind": "event", "title": ev["title"],
+                      "summary": ev["body"].split("\n", 1)[0][:100], "starts_at": ev["starts_at"], "event": gauge(c, ev),
+                      "chips": [{"label": "참여 신청", "type": "event", "target": ev["pid"]}]})
+    d = None if me else latest_dept(c)
+    if d:
+        dn = dict(notice_out(c, d), type="notice")
+        parts = parts + [dn] if open_ else [dn] + parts
+    return {"banners": parts}
 
 
 def notices(c, me, b, q):
@@ -1310,7 +1479,7 @@ def notices(c, me, b, q):
 
 def notice(c, me, b, q):
     n = by_pid(c, "notices", q.get("id", [""])[0])
-    if not me and not (n and readable(me, n)):     # 비로그인에겐 없는 글과 막힌 글이 같은 답
+    if not me and not (n and readable(c, me, n)):     # 비로그인에겐 없는 글과 막힌 글이 같은 답
         raise Err(401, "로그인해 주십시오")
     if not n:
         raise Err(404, "없는 공지입니다")
@@ -1712,6 +1881,9 @@ def admin_cells(c, me, b, q):
         table, sets, args = fn(c, rid, v, me) if fn is edit_users else fn(c, rid, v)
         if sets and not c.execute(f"UPDATE {table} SET {', '.join(sets)} WHERE id=?", args + [rid]).rowcount:
             raise Err(404, "삭제된 항목이 있습니다. 새로고침해 주십시오")
+    if b["table"] == "apps":
+        for (eid,) in c.execute(f"SELECT DISTINCT event_id FROM applications WHERE id IN ({','.join('?' * len(rows))})", [r["id"] for r in rows]).fetchall():
+            sheet_later(eid)
     return {"ok": True, "n": len(rows)}
 
 
@@ -1826,14 +1998,14 @@ else{msg.className='err';msg.textContent=x[0]===401?'먼저 최고 관리자로 
 
 # 경로 → (함수, 필요한 권한). None=누구나, user=로그인, admin, super
 GET = {"/api/me": (get_me, None), "/api/items": (items, "user"), "/api/week": (week, None), "/api/admin/room_rules": (admin_room_rules, "admin"),
-       "/api/my_reservations": (my_reservations, "user"), "/api/events": (events, None), "/api/event": (event, "user"),
+       "/api/my_reservations": (my_reservations, "user"), "/api/mypage": (mypage, "user"), "/api/events": (events, None), "/api/event": (event, "user"),
        "/api/banners": (banners, None), "/api/notices": (notices, None), "/api/notice": (notice, None),
        "/api/admin/notices": (admin_notices, "admin"), "/api/admin/notice": (admin_notice, "admin"),
        "/api/admin/items": (admin_items, "admin"), "/api/admin/qr.pdf": (admin_qr_pdf, "admin"),
        "/api/admin/loans": (admin_loans, "admin"), "/api/admin/reservations": (admin_reservations, "admin"),
        "/api/admin/events": (admin_events, "admin"), "/api/admin/applications": (admin_applications, "admin"),
        "/api/admin/users": (admin_users, "admin")}
-POST = {"/api/signup": (signup, None), "/api/signup_code": (signup_code, None), "/api/mail_prefs": (mail_prefs, "user"), "/api/login": (login, None), "/api/logout": (logout, None),
+POST = {"/api/signup": (signup, None), "/api/signup_code": (signup_code, None), "/api/mail_prefs": (mail_prefs, "user"), "/api/withdraw": (withdraw, "user"), "/api/login": (login, None), "/api/logout": (logout, None),
         "/api/forgot": (forgot, None), "/api/reset": (reset, None),
         "/api/scan": (scan, "user"), "/api/reserve": (reserve, "user"), "/api/unreserve": (unreserve, "user"),
         "/api/apply": (apply, "user"), "/api/apply_cancel": (apply_cancel, "user"), "/api/admin/item_add": (admin_item_add, "admin"),
@@ -1841,7 +2013,7 @@ POST = {"/api/signup": (signup, None), "/api/signup_code": (signup_code, None), 
         "/api/admin/event_save": (admin_event_save, "admin"), "/api/admin/event_del": (admin_event_del, "admin"),
         "/api/admin/notice_save": (admin_notice_save, "admin"), "/api/admin/notice_del": (admin_notice_del, "admin"),
         "/api/admin/upload": (admin_upload, "admin"), "/api/admin/dues": (admin_dues, "admin"), "/api/admin/signup": (admin_signup, "admin"), "/api/admin/cells": (admin_cells, "admin"), "/api/admin/role": (admin_role, "super"),
-        "/api/admin/handover": (admin_handover, "super"), "/api/admin/smtp_setup": (smtp_setup, "super")}
+        "/api/admin/handover": (admin_handover, "super"), "/api/admin/sheet_sync": (admin_sheet_sync, "admin"), "/api/admin/smtp_setup": (smtp_setup, "super")}
 RANK = {None: 0, "user": 1, "admin": 2, "super": 3}
 RAW_BODY = {admin_upload}              # JSON 이 아니라 바이트 그대로 받는 곳
 # 화면은 React 로 만들어 web/dist 에 구운 것을 보낸다 (원본은 web/src, 굽기: cd web && npm run build)
@@ -1915,6 +2087,16 @@ class H(BaseHTTPRequestHandler):
                                  [("X-Content-Type-Options", "nosniff")], cache="public, max-age=31536000, immutable")
         if path == "/unsub":
             return self.unsub(False)
+        if path == "/robots.txt":
+            body = "User-agent: *\n" + "".join(f"Disallow: {PREFIX}{p}\n" for p in ("/admin", "/api/", "/q/", "/unsub", "/mail-setup", "/next")) \
+                + f"\nSitemap: {ORIGIN}{PREFIX}/sitemap.xml\n"
+            return self.send(200, body.encode(), "text/plain; charset=utf-8", cache="public, max-age=3600")
+        if path == "/sitemap.xml":                   # 화면이 # 주소라 구글이 따로 보는 주소는 첫 화면 하나뿐이다
+            body = ('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+                    f"<url><loc>{htmllib.escape(ORIGIN + PREFIX)}/</loc></url>\n</urlset>\n")
+            return self.send(200, body.encode(), "application/xml; charset=utf-8", cache="public, max-age=3600")
+        if path in ("/terms", "/privacy"):          # 구글 동의 화면 등 바깥에 적을 주소
+            return self.send(302, b"", "text/plain", [("Location", "./#" + path)])
         if path == "/mail-setup":
             return self.send(200, SETUP_PAGE, "text/html; charset=utf-8", cache="no-store", scripts=INLINE_SCRIPT.findall(SETUP_PAGE))
         if path == "/admin/":

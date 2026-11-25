@@ -1,0 +1,130 @@
+// 세미나실 예약: 칸을 누르거나 누른 채로 끌어서 여러 시간을 고른다
+import {useEffect, useMemo, useRef, useState} from 'react';
+import {api, iso, addDays, toDate, wd, koDate, koDay, koRange, toast} from '../lib/common.js';
+import {useAsk, useLoad, useMQ} from '../ui/base.jsx';
+import {Btn, Pb, Empty, Loading, Head} from '../ui/kit.jsx';
+import {IcCal} from '../ui/icons.jsx';
+import {days7, HOURS, DAY_FROM, rangeLabel, whoMsg, Legend, DayHead, WeekNav, RoomPick} from './Lobby.jsx';
+
+const mondayOf = d => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() - (t.getUTCDay() + 6) % 7); return t.toISOString().slice(0, 10); };
+
+export default function Reserve({q}) {
+  const ask = useAsk(), narrow = useMQ('(max-width: 640px)');
+  const today = iso(new Date());
+  const [room, setRoom] = useState(+q.get('room') || null);
+  const [day, setDay] = useState(q.get('date') || today);
+  // 넘겨받은 날이 오늘부터 7일 안이면 오늘부터, 밖이면 그날부터 보인다
+  const [wstart, setWstart] = useState(() => { const d = q.get('date') || today; return d < today ? today : d > addDays(today, 6) ? d : today; });
+  const [sel, setSel] = useState(() => new Set(q.get('hour') ? [+q.get('hour')] : []));
+  const [busy, setBusy] = useState(false), [early, setEarly] = useState(false);
+  const {data, reload} = useLoad(() => Promise.all([api('week?start=' + wstart), api('my_reservations')]), [wstart]);
+  const anchor = useRef(null), gridRef = useRef(null), scrolled = useRef(false);
+
+  const w = data?.[0], my = data?.[1];
+  const rm = room || w?.rooms[0].id;
+  const days = w ? days7(w.start) : [];
+  const dsel = days.includes(day) ? day : days[0];
+  const taken = useMemo(() => {
+    const t = {}; w?.reservations.filter(r => r.room_id === rm).forEach(r => { t[r.date + '|' + r.hour] = r; }); return t;
+  }, [w, rm]);
+  const nowD = w?.now.slice(0, 10), nowH = w ? +w.now.slice(11, 13) : 0;
+  const isPast = (d, h) => d < nowD || (d === nowD && h < nowH);
+  const free = (d, h) => h >= 0 && h < 24 && !taken[d + '|' + h] && !isPast(d, h);
+
+  useEffect(() => {      // 넘겨받은 시간 칸이 보이게 한 번만 내린다
+    if (!w || scrolled.current || !q.get('hour')) return;
+    scrolled.current = true;
+    gridRef.current?.querySelector(`[data-d="${dsel}"][data-h="${q.get('hour')}"]`)?.scrollIntoView({block: 'center'});
+  }, [w]);
+
+  if (!data) return <div className="cols"><Loading rows={[700]} /><Loading rows={[160]} /></div>;
+
+  // 내 예약: 같은 방·날의 이어진 시간은 한 줄로
+  const mine = [];
+  [...my.reservations].sort((a, b) => a.date.localeCompare(b.date) || a.room.localeCompare(b.room) || a.hour - b.hour).forEach(r => {
+    const g = mine[mine.length - 1];
+    if (g && g.room === r.room && g.date === r.date && g.end === r.hour) { g.end++; g.ids.push(r.id); }
+    else mine.push({room: r.room, date: r.date, start: r.hour, end: r.hour + 1, ids: [r.id]});
+  });
+
+  const reset = () => setSel(new Set());
+  const at = e => { const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-h]'); return el && gridRef.current.contains(el) ? {d: el.dataset.d, h: +el.dataset.h} : null; };
+  const extend = h => {      // 시작 칸부터 h 까지(같은 날), 막힌 칸을 만나면 거기서 멈춘다
+    const a = anchor.current, step = h >= a ? 1 : -1, s = new Set();
+    for (let i = a; i !== h + step && free(dsel, i); i += step) s.add(i);
+    setSel(s);
+  };
+  const down = e => {
+    const p = at(e); if (!p) return;
+    const r = taken[p.d + '|' + p.h];
+    if (r) return toast(whoMsg(p.d, p.h, r.mine ? '내 예약' : r.who));
+    if (!free(p.d, p.h)) return;
+    const only = dsel === p.d && sel.size === 1 && sel.has(p.h);
+    setDay(p.d); anchor.current = p.h; setSel(only ? new Set() : new Set([p.h]));
+    gridRef.current.setPointerCapture(e.pointerId); e.preventDefault();
+  };
+  const move = e => { if (anchor.current == null) return; const p = at(e); if (p && p.d === dsel) extend(p.h); };
+  const up = () => { anchor.current = null; };
+
+  const hs = [...sel].sort((x, y) => x - y);
+  const cap = w.rules.week_hours, lead = w.rules.cancel_hours, wk = mondayOf(dsel);
+  const used = Object.entries(w.used).filter(([d]) => mondayOf(d) === wk).reduce((n, [, c]) => n + c, 0);
+  const total = used + hs.length, over = cap > 0 && total > cap;
+  const locked = g => lead > 0 && new Date(g.date + 'T00:00') .getTime() + (g.start - lead) * 3600e3 < new Date(w.now).getTime();
+  const go = async () => {
+    setBusy(true);
+    try { await api('reserve', {room_id: rm, date: dsel, hours: hs}); reset(); toast('예약했습니다'); reload(); } catch {} finally { setBusy(false); }
+  };
+  const cancel = async ids => {
+    if (!await ask.confirm('예약을 취소하시겠습니까?', {actionLabel: '예약 취소', danger: true})) return;
+    await api('unreserve', {ids}); toast('취소했습니다'); reload();
+  };
+  const shift = n => { setWstart(addDays(w.start, n)); reset(); };
+
+  return <div className="cols enter">
+    <section className="card stack">
+      <Head big kicker={koDate(today)} title="세미나실" />
+      <RoomPick rooms={w.rooms} room={rm} onChange={v => { setRoom(v); reset(); }} />
+      <div className="row"><b className="grow nowrap">{narrow ? koDate(dsel) : rangeLabel(days)}</b>
+        <WeekNav onPrev={() => shift(-7)} onToday={() => { setWstart(today); setDay(today); reset(); }} onNext={() => shift(7)} /></div>
+      {narrow ? <>
+        <div className="daystrip" role="group" aria-label="날짜 고르기">{days.map(d => {
+          const past = d < nowD;
+          return <button key={d} type="button" aria-pressed={d === dsel} disabled={past} className={(d === dsel ? 'on ' : '') + (toDate(d).getDay() === 0 ? 'sun' : '')} onClick={() => { setDay(d); reset(); }}>
+            <small>{wd(d)}</small><b>{+d.slice(8)}</b></button>;
+        })}</div>
+        <div className="tt" ref={gridRef} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+          {HOURS.filter(hr => early || hr >= DAY_FROM).map(hr => {
+            const r = taken[dsel + '|' + hr];
+            const cls = r ? (r.mine ? 'mine' : 'busy') : isPast(dsel, hr) ? 'past' : sel.has(hr) ? 'sel' : '';
+            const txt = r ? (r.mine ? '내 예약' : `${r.who} 님 예약`) : cls === 'past' ? '지남' : cls === 'sel' ? '선택함' : '예약 가능';
+            return <div key={hr} className={'tc row ' + cls} data-d={dsel} data-h={hr}><span>{koRange(hr, hr + 1)}</span><em>{txt}</em></div>;
+          })}
+        </div></> :
+      <div>
+        <DayHead days={days} today={nowD} />
+        <div className="tt" ref={gridRef} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+          {HOURS.filter(hr => early || hr >= DAY_FROM).map(hr => <div className="wk" key={hr}><span className="hh">{hr}시</span>{days.map(d => {
+            const r = taken[d + '|' + hr];
+            const cls = r ? (r.mine ? 'mine' : 'busy') : isPast(d, hr) ? 'past' : d === dsel && sel.has(hr) ? 'sel' : '';
+            return <div key={d} className={'tc ' + cls} data-d={d} data-h={hr} />;
+          })}</div>)}
+        </div>
+      </div>}
+      <div><Pb soft onClick={() => setEarly(!early)}>{early ? `0~${DAY_FROM}시 접기` : `0~${DAY_FROM}시 보기`}</Pb></div>
+      <Legend extra="누른 채로 끌면 여러 시간을 한 번에 고릅니다" />
+      {hs.length > 0 && <div className="act">
+        <b className="act-n"><span className={over ? 'over' : ''}>{total}</span>{cap > 0 ? `/${cap}` : ''}시간</b>
+        <Btn onClick={go} busy={busy} disabled={over}>예약</Btn>
+      </div>}
+    </section>
+    <section className="card">
+      <h3>내 예약</h3>
+      {mine.length ? <div className="list">{mine.map(g => <div key={g.ids[0]}><div className="grow"><b className="li-t">{g.room}</b>
+        <span className="muted">{`${koDay(g.date)}${koDay(g.date) === koDate(g.date) ? '' : ` ${koDate(g.date)}`} ${koRange(g.start, g.end)}`}</span></div>
+        <Btn kind="red" size="sm" onClick={() => cancel(g.ids)} disabled={locked(g)}>취소</Btn></div>)}</div>
+        : <Empty icon={<IcCal />} title="예약한 시간이 없습니다" desc="시간표에서 빈 칸을 눌러 예약하십시오." />}
+      {(cap > 0 || lead > 0) && <p className="muted">{[cap > 0 && `한 주(월~일)에 ${cap}시간까지 예약할 수 있습니다.`, lead > 0 && `시작 ${lead}시간 전까지만 취소할 수 있습니다.`].filter(Boolean).join(' ')}</p>}
+    </section>
+  </div>;
+}

@@ -40,7 +40,7 @@ PDF 의 QR 은 벡터 사각형이라 해상도가 없다. 기본 2cm(모듈 0.6
 
 ## 로그인 유지
 
-쿠키 `scene_sid` (HttpOnly·Secure·SameSite=Lax, Path=/council/), 90일. 앱을 열 때마다(`api/me`) 다시 90일로 늘어난다.
+쿠키 `scene_sid` (HttpOnly·Secure·SameSite=Lax, Path=/council/), 400일(브라우저 허용 최대치). 앱을 열 때마다(`api/me`) 다시 400일로 늘어난다.
 
 ## 비밀번호 · 찾기
 
@@ -58,3 +58,13 @@ SMTP_PASS=앱 비밀번호
 ```
 
 없으면 찾기 화면이 "메일 발송이 아직 설정되지 않았습니다" 를 띄운다. 발송 실패는 `journalctl -u council` 에 `mail to … failed`.
+
+## 화면 모양 (디자인 시스템 SWITCH)
+
+`web/` 의 화면은 외부 UI 라이브러리 없이 디자인 시스템 **SWITCH** 의 CSS 한 장으로 그린다.
+
+- `web/design/tokens.json` — 디자인 시스템의 토큰 원본. 바뀌면 `cd web && npm run tokens` 로 `src/ui/tokens.css` 를 다시 만든다
+- `web/src/ui/switch.css` — 디자인 시스템의 `components/bundle.css` 그대로 (로고 경로만 `./logo.svg`)
+- `web/src/ui/kit.jsx` — 그 클래스를 쓰는 React 부품 (Btn · Pill · Field · Seg · Opts · Empty · Gauge …), `icons.jsx` — 시스템의 선 아이콘
+- `web/src/ui/app.css`, `student/student.css`, `admin/admin.css` — 시스템에 없는 조각만, 값은 토큰만
+- 테마는 `<html data-theme="light|dark">`, 없으면 기기 설정

@@ -1,6 +1,7 @@
 """자체검사: python3 test_council.py — 임시 DB 로 서버를 띄워 핵심 흐름을 확인한다."""
 import json
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -9,10 +10,12 @@ from http.server import ThreadingHTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
+os.environ["COUNCIL_SIGNUP"] = "open"
 os.environ["COUNCIL_DB"] = os.path.join(tempfile.mkdtemp(), "t.db")
 import council  # noqa: E402
 
 council.init_db()
+council.SCE_EVERY = 0
 srv = ThreadingHTTPServer(("127.0.0.1", 0), council.H)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 URL = f"http://127.0.0.1:{srv.server_port}"
@@ -37,15 +40,20 @@ class Client:
 
 def signup(name, sid):
     c = Client()
-    st, d = c.call("/api/signup", {"username": name, "password": "secret1", "name": name, "student_id": sid, "email": f"{name}@x.kr"})
+    st, d = c.call("/api/signup", {"username": name, "password": "secret1", "name": name, "student_id": sid, "email": f"{name}@skku.edu", "phone": "010-1234-5678", "consent": True})
     assert st == 200, d
     return c
 
 
-a, b = signup("alice", "2024001"), signup("bob", "2024002")
-assert a.call("/api/signup", {"username": "alice", "password": "secret1", "name": "a", "student_id": "1", "email": "a@x.kr"})[0] == 409
+a, b = signup("alice", "2024000001"), signup("bob", "2024000002")
+assert a.call("/api/signup", {"username": "alice", "password": "secret1", "name": "a", "student_id": "2024000099", "email": "a@skku.edu", "phone": "01012345678", "consent": True})[0] == 409
 assert Client().call("/api/login", {"username": "alice", "password": "nope"})[0] == 401
-assert Client().call("/api/signup", {"username": "dave", "password": "Pw1234!", "name": "Pw1234!", "student_id": "1", "email": "d@x.kr"})[0] == 400
+assert Client().call("/api/signup", {"username": "dave", "password": "Pw1234!", "name": "Pw1234!", "student_id": "2024000099", "email": "d@skku.edu", "phone": "01012345678", "consent": True})[0] == 400
+assert Client().call("/api/signup", {"username": "frank", "password": "secret1", "name": "f", "student_id": "2024000099", "email": "f@skku.edu", "phone": "01012345678"})[0] == 400   # 동의 없음
+assert Client().call("/api/signup", {"username": "frank", "password": "secret1", "name": "f", "student_id": "2024000099", "email": "f@skku.edu", "phone": "12", "consent": True})[0] == 400   # 전화번호 틀림
+assert Client().call("/api/signup", {"username": "frank", "password": "secret1", "name": "f", "student_id": "123", "email": "f@skku.edu", "phone": "01012345678", "consent": True})[0] == 400   # 학번 10자리
+assert Client().call("/api/signup", {"username": "frank", "password": "secret1", "name": "f", "student_id": "2024000099", "email": "f@gmail.com", "phone": "01012345678", "consent": True})[0] == 400   # 학교 메일만
+assert Client().call("/api/signup", {"username": "frank", "password": "secret1", "name": "f", "student_id": "2024000099", "email": "f@g.skku.edu", "phone": "01012345678", "consent": True})[0] == 200
 assert Client().call("/api/scan", {"code": "abcd"})[0] == 401
 assert a.call("/api/me")[1]["user"]["name"] == "alice"
 
@@ -64,6 +72,20 @@ assert a.call("/api/scan", {"code": item["code"]})[1]["result"] == "in_use"
 assert a.call("/api/admin/items")[1]["items"][0]["who"] == "bob"
 assert b.call("/api/scan", {"code": item["code"]})[1]["result"] == "returned"
 assert a.call("/api/admin/items")[1]["loans"][0]["in_at"]
+
+# 대여 기록은 전부 (관리 탭의 최근 50건 제한 없음)
+for _ in range(30):
+    b.call("/api/scan", {"code": item["code"]}); b.call("/api/scan", {"code": item["code"]})
+assert b.call("/api/admin/loans")[0] == 403
+loans = a.call("/api/admin/loans")[1]["loans"]
+assert len(loans) == 31 and loans[0]["who"] == "bob" and loans[0]["student_id"] == "2024000002" and loans[0]["kind"] == "우산"
+
+# 관리 사이트 파일
+for path in ("/admin", "/"):
+    page = urlopen(URL + path).read().decode()
+    for asset in re.findall(r'(?:src|href)="\./(assets/[^"]+)"', page):
+        assert urlopen(URL + "/" + asset).status == 200, asset
+assert urlopen(URL + "/next/").url.rstrip("/") == URL     # 예전 미리 보기 주소는 원래 주소로
 
 # /q/<code> 는 상태를 안 바꾸고 페이지로 돌려보낸다
 st = urlopen(Request(URL + "/q/" + item["code"], method="HEAD")).status
@@ -84,9 +106,50 @@ w = b.call(f"/api/week?start={tomorrow}")[1]
 assert {r["who"] for r in w["reservations"]} == {"b*b", "a***e"}, w["reservations"]
 rid = b.call("/api/my_reservations")[1]["reservations"][0]["id"]
 nb = Client()
-nb.cookie = signup("carol", "2024003").cookie
+nb.cookie = signup("carol", "2024000003").cookie
 nb.call("/api/unreserve", {"id": rid})
 assert len(b.call("/api/my_reservations")[1]["reservations"]) == 2
+
+# 시간표는 고른 날부터 7일 (월요일로 맞추지 않는다)
+wed = "2026-11-11"
+assert council.date.fromisoformat(wed).weekday() == 2 and b.call(f"/api/week?start={wed}")[1]["start"] == wed
+assert Client().call("/api/week")[1]["start"] == council.now().date().isoformat()
+
+# 예약 기록: 관리자만, 이어진 시간은 한 묶음, 묶음을 한 번에 취소
+assert b.call("/api/admin/reservations")[0] == 403
+rs = a.call("/api/admin/reservations")[1]["reservations"]
+bob_r = [r for r in rs if r["who"] == "bob"]
+assert len(bob_r) == 1 and (bob_r[0]["start"], bob_r[0]["end"]) == (10, 12) and len(bob_r[0]["ids"]) == 2, rs
+assert bob_r[0]["created_at"] and bob_r[0]["student_id"] == "2024000002"
+assert b.call("/api/unreserve", {"ids": "x"})[0] == 400
+assert a.call("/api/unreserve", {"ids": bob_r[0]["ids"]})[0] == 200
+assert b.call("/api/my_reservations")[1]["reservations"] == []
+
+# 세미나실 규칙: 주 최대 시간·취소 가능 시간
+dd0 = council.now().date() + timedelta(days=8)
+dd0 += timedelta(days=(2 - dd0.weekday()) % 7)
+wd, wd2 = dd0.isoformat(), (dd0 + timedelta(days=1)).isoformat()
+assert b.call("/api/admin/room_rules")[0] == 403 and b.call("/api/admin/room_rules", {"week_hours": 2})[0] == 403
+assert a.call("/api/admin/room_rules")[1] == {"week_hours": 0, "cancel_hours": 0}
+assert a.call("/api/admin/room_rules", {"week_hours": "x"})[0] == 400
+assert a.call("/api/admin/room_rules", {"week_hours": 2, "cancel_hours": 3})[1] == {"week_hours": 2, "cancel_hours": 3}
+assert b.call("/api/reserve", {"room_id": 1, "date": wd, "hours": [9, 10, 11]})[0] == 400      # 3/2
+assert b.call("/api/reserve", {"room_id": 1, "date": wd, "hours": [9]})[0] == 200
+assert b.call("/api/reserve", {"room_id": 1, "date": wd2, "hours": [9, 10]})[0] == 400         # 같은 주 합산 3/2
+assert b.call("/api/reserve", {"room_id": 1, "date": wd2, "hours": [9]})[0] == 200
+assert b.call("/api/reserve", {"room_id": 2, "date": wd, "hours": [20]})[0] == 400
+assert a.call("/api/reserve", {"room_id": 2, "date": wd, "hours": [20, 21, 22]})[0] == 200      # 관리자는 제한 없음
+assert b.call(f"/api/week?start={wd}")[1]["rules"]["week_hours"] == 2
+mine_ids = [r["id"] for r in b.call("/api/my_reservations")[1]["reservations"]]
+assert b.call("/api/unreserve", {"ids": mine_ids})[0] == 200                                    # 멀리 남아 취소 가능
+soon = council.now() + timedelta(hours=1)
+assert b.call("/api/reserve", {"room_id": 1, "date": soon.date().isoformat(), "hours": [soon.hour]})[0] in (200, 400)
+if b.call("/api/my_reservations")[1]["reservations"]:
+    r = b.call("/api/my_reservations")[1]["reservations"][0]
+    assert b.call("/api/unreserve", {"ids": [r["id"]]})[0] == 400                               # 3시간 안이라 취소 불가
+assert a.call("/api/admin/room_rules", {"week_hours": 0, "cancel_hours": 0})[0] == 200
+for r in a.call("/api/admin/reservations")[1]["reservations"]:
+    a.call("/api/unreserve", {"ids": r["ids"]})
 
 # 행사: 필수 항목 검사, 마감 전 수정, 마감 후 거부
 fields = [{"label": "사이즈", "type": "select", "options": ["S", "M"], "required": True},
@@ -94,11 +157,30 @@ fields = [{"label": "사이즈", "type": "select", "options": ["S", "M"], "requi
 future = (council.now() + timedelta(days=3)).isoformat(timespec="minutes")
 assert a.call("/api/admin/event_save", {"title": "간식 배부", "deadline": future, "on_lobby": True, "fields": fields})[0] == 200
 eid = b.call("/api/events")[1]["events"][0]["id"]
+assert re.fullmatch(r"[0-9a-f]{16}", eid)                                              # 바깥에는 차례 번호 대신 무작위 번호
+assert b.call("/api/apply", {"event_id": 1, "answers": {}})[0] == 404 and b.call("/api/event?id=1")[0] == 404
+assert "id" not in b.call("/api/me")[1]["user"]
 assert b.call("/api/apply", {"event_id": eid, "answers": {"0": ""}})[0] == 400
 assert b.call("/api/apply", {"event_id": eid, "answers": {"0": "XL"}})[0] == 400
 assert b.call("/api/apply", {"event_id": eid, "answers": {"0": "S", "1": True}})[0] == 200
 assert b.call("/api/apply", {"event_id": eid, "answers": {"0": "M"}})[0] == 200
 assert b.call(f"/api/event?id={eid}")[1]["application"]["answers"] == {"0": "M", "1": False}
+assert b.call("/api/apply_cancel", {"event_id": eid})[0] == 200 and b.call(f"/api/event?id={eid}")[1]["application"] is None
+assert b.call("/api/apply_cancel", {"event_id": eid})[0] == 404
+assert b.call("/api/apply", {"event_id": eid, "answers": {"0": "M"}})[0] == 200
+mf = [{"label": "메뉴", "type": "multi", "options": ["A", "B", "C"], "required": True}]
+assert a.call("/api/admin/event_save", {"title": "복수 선택", "deadline": future, "on_lobby": False, "fields": mf})[0] == 200
+mid = next(e["id"] for e in a.call("/api/admin/events")[1]["events"] if e["title"] == "복수 선택")
+assert b.call("/api/apply", {"event_id": mid, "answers": {"0": []}})[0] == 400
+assert b.call("/api/apply", {"event_id": mid, "answers": {"0": ["D"]}})[0] == 400
+assert b.call("/api/apply", {"event_id": mid, "answers": {"0": ["C", "A", "A"]}})[0] == 200
+assert b.call(f"/api/event?id={mid}")[1]["application"]["answers"] == {"0": ["A", "C"]}
+lf = [{"label": "의견", "type": "long"}, {"label": "학년", "type": "dropdown", "options": ["1", "2"], "required": True}]
+assert a.call("/api/admin/event_save", {"title": "긴 글", "deadline": future, "on_lobby": False, "fields": lf})[0] == 200
+lid = next(e["id"] for e in a.call("/api/admin/events")[1]["events"] if e["title"] == "긴 글")
+assert b.call("/api/apply", {"event_id": lid, "answers": {"0": "가\n나" * 500, "1": "3"}})[0] == 400
+assert b.call("/api/apply", {"event_id": lid, "answers": {"0": "가\n나" * 500, "1": "2"}})[0] == 200
+assert a.call("/api/admin/event_save", {"title": "복수 선택", "id": mid, "deadline": future, "on_lobby": False, "fields": [{"label": "x", "type": "multi", "options": []}]})[0] == 400
 apps = a.call(f"/api/admin/applications?id={eid}")[1]["applications"]
 assert len(apps) == 1 and apps[0]["answers"]["0"] == "M"
 past = (council.now() - timedelta(minutes=1)).isoformat(timespec="minutes")
@@ -128,13 +210,15 @@ ids = {n["title"]: n["id"] for n in a.call("/api/admin/notices")[1]["notices"]}
 assert [n["title"] for n in anon.call("/api/notices")[1]["notices"]] == ["MT 공지"]
 assert anon.call(f"/api/notice?id={ids['수강정정']}")[0] == 401
 assert anon.call("/api/notice?id=9999")[0] == 401
+assert all(re.fullmatch(r"[0-9a-f]{16}", i) for i in ids.values()) and b.call("/api/notice?id=1")[0] == 404
 st, d = anon.call(f"/api/notice?id={ids['학과 배너']}")
 assert st == 200 and d["notice"]["body"] == "배너 본문" and d["notice"]["chips"][1]["type"] == "event"
 assert d["notice"]["event"]["capacity"] is None and d["notice"]["event"]["n"] == 1     # 게이지는 비로그인도
 assert d["prev"] is None or d["prev"]["title"] != "수강정정"                            # 이전 글에도 막힌 글이 안 샌다
 assert len(b.call("/api/notices")[1]["notices"]) == 3
 bn = anon.call("/api/banners")[1]["banners"]
-assert [x["title"] for x in bn] == ["학과 배너"]       # 마감된 행사는 배너에서 빠진다
+assert [x["title"] for x in bn] == ["MT 공지", "긴 글", "학과 배너"]       # 진행 중인 행사가 먼저, 학과 공지는 뒤
+assert [x["title"] for x in a.call("/api/banners")[1]["banners"]] == ["MT 공지", "긴 글"]     # 로그인하면 학과 공지는 빠진다
 
 # 정원: 무제한 / 찼을 때 거절 / 기존 신청자 수정은 허용 / 인원 숨김
 ev = {"title": "MT", "deadline": future, "on_lobby": True, "fields": []}
@@ -154,21 +238,107 @@ g = b.call(f"/api/event?id={mt}")[1]["gauge"]
 assert g["n"] is None and g["full"]                                         # 숨겨도 마감 여부는 안다
 assert {e["id"]: e["n"] for e in a.call("/api/admin/events")[1]["events"]}[mt] == 1   # 관리자는 실제 수
 
+# 붙여 넣은 글의 보이지 않는 문자는 저장할 때 지운다
+assert nsave(title="\u200b붙여넣기", body="\u200b# 제목\n\n\u200b- 목록\ufeff")[0] == 200
+pasted = [n for n in a.call("/api/admin/notices")[1]["notices"] if n["title"] == "붙여넣기"][0]
+assert a.call(f"/api/admin/notice?id={pasted['id']}")[1]["notice"]["body"] == "# 제목\n\n- 목록"
+
+
+def upload(cl, data, ctype="image/png"):
+    req = Request(URL + "/api/admin/upload", data=data, headers={"Content-Type": ctype, "Cookie": cl.cookie})
+    try:
+        r = urlopen(req)
+        return r.status, json.loads(r.read())
+    except HTTPError as e:
+        return e.code, json.loads(e.read())
+
+
+# 그림 올리기: 관리자만, 그림 서명 검사, 5MB 제한, 같은 그림은 같은 주소
+png = b"\x89PNG\r\n\x1a\n" + os.urandom(64)
+assert upload(nb, png)[0] == 403
+assert upload(a, b"<svg onload=alert(1)>", "image/svg+xml")[0] == 400
+assert upload(a, b"\xff\xd8\xff" + b"0" * (5 * 1024 * 1024))[0] == 413
+st, d = upload(a, png)
+assert st == 200 and d["url"].startswith("img/") and d["url"].endswith(".png")
+assert upload(a, png)[1]["url"] == d["url"]
+r = urlopen(URL + "/" + d["url"])
+assert r.read() == png and r.headers["Content-Type"] == "image/png" and r.headers["X-Content-Type-Options"] == "nosniff"
+for bad in ("/img/../council.db", "/img/zzzz.png", "/img/0123456789abcdef.png"):
+    try:
+        urlopen(URL + bad); raise AssertionError(bad)
+    except HTTPError as e:
+        assert e.code == 404, bad
+
+# 학생회비: 관리자가 표시하고, '납부자만' 행사는 낸 학생만 새로 신청한다
+st, d = Client().call("/api/signup", {"username": "erin", "password": "secret1", "name": "", "student_id": "2024000099", "email": "e@skku.edu", "phone": "01012345678", "consent": True})
+assert st == 400 and d["error"] == "이름을 입력해 주십시오", d                      # 키 이름(name) 대신 우리말, 조사도 맞게
+assert council.josa("학번", "을", "를") == "학번을" and council.josa("아이디", "을", "를") == "아이디를"
+dues_ev = {"title": "납부자 행사", "deadline": future, "on_lobby": True, "fields": [], "dues_only": True}
+assert a.call("/api/admin/event_save", dues_ev)[0] == 200
+de = [e for e in a.call("/api/admin/events")[1]["events"] if e["title"] == "납부자 행사"][0]
+assert de["dues_only"] is True
+erin = signup("erin", "2024000009")
+st, d = erin.call("/api/apply", {"event_id": de["id"], "answers": {}})
+assert st == 403 and "학생회비" in d["error"]
+assert erin.call("/api/me")[1]["user"]["dues"] is False
+uids = {u["username"]: u["id"] for u in a.call("/api/admin/users")[1]["users"]}
+assert nb.call("/api/admin/dues", {"ids": [uids["erin"]], "dues": True})[0] == 403
+assert a.call("/api/admin/dues", {"ids": [], "dues": True})[0] == 400
+assert a.call("/api/admin/dues", {"ids": [uids["erin"]], "dues": True})[0] == 200
+assert erin.call("/api/me")[1]["user"]["dues"] is True
+assert erin.call("/api/apply", {"event_id": de["id"], "answers": {}})[0] == 200
+a.call("/api/admin/dues", {"ids": [uids["erin"]], "dues": False})
+assert erin.call("/api/apply", {"event_id": de["id"], "answers": {}})[0] == 200      # 이미 신청한 사람은 고칠 수 있다
+# 표에서 바로 고치기: 납부 체크·이름 수정, 틀린 값이 하나라도 있으면 전부 취소
+assert nb.call("/api/admin/cells", {"table": "users", "rows": [{"id": uids["erin"], "vals": {"dues": True}}]})[0] == 403
+assert a.call("/api/admin/cells", {"table": "users", "rows": [{"id": uids["erin"], "vals": {"dues": True, "name": "에린2"}}]})[0] == 200
+assert erin.call("/api/me")[1]["user"]["dues"] is True
+assert a.call("/api/admin/cells", {"table": "users", "rows": [{"id": uids["erin"], "vals": {"dues": False}}, {"id": uids["erin"], "vals": {"email": "틀림"}}]})[0] == 400
+assert erin.call("/api/me")[1]["user"]["dues"] is True
+assert a.call("/api/admin/cells", {"table": "nope", "rows": [{"id": 1, "vals": {"x": 1}}]})[0] == 400
+a.call("/api/admin/cells", {"table": "users", "rows": [{"id": uids["erin"], "vals": {"dues": False}}]})
+ap0 = a.call(f"/api/admin/applications?id={de['id']}")[1]["applications"][0]
+assert ap0["id"] and ap0["user_id"] == uids["erin"]
+assert a.call("/api/admin/cells", {"table": "apps", "rows": [{"id": ap0["id"], "vals": {"dues": True}}]})[0] == 200
+assert erin.call("/api/me")[1]["user"]["dues"] is True
+assert a.call("/api/admin/cells", {"table": "apps", "rows": [{"id": ap0["id"], "vals": {"f9": "x"}}]})[0] == 400
+assert a.call("/api/admin/cells", {"table": "apps", "rows": [{"id": 99999, "vals": {"dues": False}}]})[0] == 404
+a.call("/api/admin/cells", {"table": "users", "rows": [{"id": uids["erin"], "vals": {"dues": False}}]})
+ap = a.call(f"/api/admin/applications?id={de['id']}")[1]["applications"][0]
+assert ap["created_at"] and ap["dues"] == 0
+
 # 최고 관리자만 관리자 지정, super 는 못 내린다
 uid = {u["username"]: u["id"] for u in a.call("/api/admin/users")[1]["users"]}
 assert a.call("/api/admin/role", {"id": uid["bob"], "role": "admin"})[0] == 200
-assert b.call("/api/admin/items")[0] == 200 and b.call("/api/admin/users")[0] == 403
+assert b.call("/api/admin/items")[0] == 200 and b.call("/api/admin/users")[0] == 200     # 관리자는 회원 목록을 읽는다
+assert b.call("/api/admin/role", {"id": uid["carol"], "role": "admin"})[0] == 403        # 지정은 최고 관리자만
+assert "created_at" in a.call("/api/admin/users")[1]["users"][0]
 a.call("/api/admin/role", {"id": uid["alice"], "role": "user"})
 assert a.call("/api/me")[1]["user"]["role"] == "super"
 
+# 최고 관리자 넘기기: 비밀번호 확인, 관리자도 못 함, 넘기면 나는 관리자
+assert b.call("/api/admin/handover", {"id": uid["carol"], "password": "x"})[0] == 403
+assert a.call("/api/admin/handover", {"id": uid["bob"], "password": "wrong-pw"})[0] == 400
+assert a.call("/api/admin/handover", {"id": uid["alice"], "password": "secret1"})[0] == 400      # 나에게는 못 넘김
+assert a.call("/api/admin/handover", {"id": 99999, "password": "secret1"})[0] == 400
+assert a.call("/api/admin/handover", {"id": uid["bob"], "password": "secret1"})[0] == 200
+assert a.call("/api/me")[1]["user"]["role"] == "admin" and b.call("/api/me")[1]["user"]["role"] == "super"
+assert a.call("/api/admin/role", {"id": uid["carol"], "role": "admin"})[0] == 403         # 이제 앨리스는 지정 못 함
+assert b.call("/api/admin/handover", {"id": uid["alice"], "password": "secret1"})[0] == 200      # 다시 돌려받음
+assert a.call("/api/me")[1]["user"]["role"] == "super"
+
 # 아이디·비밀번호 찾기: 메일은 가로채서 본다
-assert Client().call("/api/forgot", {"email": "bob@x.kr"})[0] == 503        # SMTP 미설정
+assert Client().call("/api/forgot", {"email": "bob@skku.edu"})[0] == 503        # SMTP 미설정
 os.environ["SMTP_HOST"] = "test"
 sent = []
-council.mail_later = lambda to, subj, body: sent.append((to, body))
-assert Client().call("/api/forgot", {"email": "nobody@x.kr"}) == (200, {"ok": True}) and not sent
-assert Client().call("/api/forgot", {"email": "BOB@x.kr"})[0] == 200 and sent[0][0] == "bob@x.kr" and "bob" in sent[0][1]
-Client().call("/api/forgot", {"email": "bob@x.kr"})
+council.mail_later = lambda to, subj, body, page=None: sent.append((to, body, page))
+assert b.call("/api/scan", {"code": item["code"]})[1]["result"] == "borrowed"
+assert len(sent) == 1 and sent[0][0] == "bob@skku.edu" and "까지 반납해 주십시오" in sent[0][1] and "대여 현황 보기" in sent[0][2]
+assert b.call("/api/scan", {"code": item["code"]})[1]["result"] == "returned" and len(sent) == 1      # 반납은 메일 없음
+sent.clear()
+assert Client().call("/api/forgot", {"email": "nobody@skku.edu"}) == (200, {"ok": True}) and not sent
+assert Client().call("/api/forgot", {"email": "BOB@skku.edu"})[0] == 200 and sent[0][0] == "bob@skku.edu" and "bob" in sent[0][1]
+Client().call("/api/forgot", {"email": "bob@skku.edu"})
 assert len(sent) == 1                                                          # 2분 안 재요청은 무시
 tok = sent[0][1].split("#/reset/")[1].split()[0]
 assert Client().call("/api/reset", {"token": "x", "password": "newpass1"})[0] == 400
@@ -182,3 +352,399 @@ assert Client().call("/api/login", {"username": "bob", "password": "newpass1"})[
 
 assert a.call("/api/logout", {})[0] == 200 and a.call("/api/me")[1]["user"] is None
 print("ok")
+
+
+# 학과 홈페이지 공지 가져오기: 새 글만, 지워도 다시 안 들어옴
+PAGE = """<ul class="mini-type01"><li><span class="mini-board-category"> 일반 </span>
+<p class="mini-board-content-title"><a href="/sce/notice.do?mode=view&amp;articleNo=7">제목 &#40;가&#41;</a></p>
+<span class="mini-board-date"> 2026-11-11 </span>
+<p class="mini-board-content-inner"><a href="x"> 제목 &#40;가&#41; 안내 1. 신청 - 항목 * 주석 <b>굵게</b></a></p></li></ul>"""
+arts = council.parse_sce(PAGE)
+assert len(arts) == 1 and arts[0]["title"] == "제목 (가)" and arts[0]["body"].startswith("안내\n\n1. 신청\n- 항목\n- 주석")
+assert arts[0]["url"].endswith("/sce/notice.do?mode=view&articleNo=7") and council.parse_sce("<p>없음</p>") == []
+with council.connect() as c:
+    assert council.import_sce(c, arts) == 1 and council.import_sce(c, arts) == 0
+    c.execute("DELETE FROM notices WHERE title LIKE '%제목%'")
+    assert council.import_sce(c, arts) == 0
+    c.execute("DELETE FROM pulled")
+    assert council.import_sce(c, arts) == 1
+    n = c.execute("SELECT kind,title,created_at FROM notices WHERE title LIKE '%제목%'").fetchone()
+    assert (n["kind"], n["title"], n["created_at"]) == ("dept", "[일반] 제목 (가)", "2026-11-11T00:00")
+print("학과 공지 가져오기 OK")
+
+# 종류별 대여 시간: 기본 48시간, 설정, 기한 지난 대여 구분, 이름을 바꿔도 따라감
+a, b = Client(), Client()      # 앞 시험 끝에서 로그아웃·비밀번호 변경이 있었으니 다시 로그인
+assert a.call("/api/login", {"username": "alice", "password": "secret1"})[0] == 200
+assert b.call("/api/login", {"username": "bob", "password": "newpass1"})[0] == 200
+assert nb.call("/api/admin/kind_hours", {"kind": "우산", "hours": 3})[0] == 403
+assert a.call("/api/admin/kind_hours", {"kind": "없는종류", "hours": 3})[0] == 404
+assert a.call("/api/admin/kind_hours", {"kind": "우산", "hours": 0})[0] == 400
+assert a.call("/api/admin/kind_hours", {"kind": "우산", "hours": "x"})[0] == 400
+it = a.call("/api/admin/items")[1]
+assert it["default_hours"] == 48 and {r["kind"]: r["hours"] for r in it["rules"]} == {"우산": 48}      # 정하지 않으면 48시간
+code, iid = it["items"][1]["code"], it["items"][1]["id"]
+assert b.call("/api/scan", {"code": code})[1]["result"] == "borrowed"
+mine = [i for i in b.call("/api/items")[1]["items"] if i["mine"]][0]
+assert mine["due"] > council.stamp() and mine["due"][:10] >= (council.now() + timedelta(hours=47)).isoformat()[:10]   # 빌린 사람은 기한을 본다
+assert all(i["due"] is None for i in a.call("/api/items")[1]["items"])          # 남의 기한은 안 보임
+row = [l for l in a.call("/api/admin/loans")[1]["loans"] if not l["in_at"]][0]
+assert row["late_hours"] == 0 and row["hours"] == 48 and row["due"]
+def backdate(h):
+    with council.connect() as c:
+        old = (council.now() - timedelta(hours=h)).isoformat(timespec="minutes")
+        c.execute("UPDATE loans SET out_at=? WHERE id=?", (old, row["id"]))
+        c.execute("UPDATE items SET borrowed_at=? WHERE id=?", (old, row["item_id"]))
+    return [l for l in a.call("/api/admin/loans")[1]["loans"] if l["id"] == row["id"]][0]
+assert backdate(47)["late_hours"] == 0                                         # 47시간 → 아직 기한 안
+l = backdate(50)
+assert 1 <= l["late_hours"] <= 3 and l["item_id"]                              # 50시간 → 약 2시간 지남 (분 단위 올림)
+assert 1 <= [i for i in a.call("/api/admin/items")[1]["items"] if i["who"]][0]["late_hours"] <= 3
+assert a.call("/api/admin/kind_hours", {"kind": "우산", "hours": 72})[1]["hours"] == 72
+assert backdate(50)["late_hours"] == 0                                         # 72시간으로 늘리면 기한 안
+assert a.call("/api/admin/kind_hours", {"kind": "우산", "hours": 24})[1]["hours"] == 24
+assert 25 <= backdate(50)["late_hours"] <= 27
+a.call("/api/admin/cells", {"table": "items", "rows": [{"id": iid, "vals": {"kind": "장우산"}}]})
+assert {r["kind"]: r["hours"] for r in a.call("/api/admin/items")[1]["rules"]}["장우산"] == 24   # 이름을 바꿔도 따라감
+assert a.call("/api/admin/kind_hours", {"kind": "우산", "hours": ""})[1]["hours"] == 48          # 비우면 기본
+assert all(l["late_hours"] == 0 for l in a.call("/api/admin/loans")[1]["loans"] if l["in_at"])   # 반납한 건 연체 아님
+print("대여 시간 OK")
+
+# 기록 포함 전체 수정: 대여 기록·예약 기록·물품·회원·행사·공지·신청
+def cells(table, id, **vals):
+    return a.call("/api/admin/cells", {"table": table, "rows": [{"id": id, "vals": vals}]})
+users = {u["username"]: u for u in a.call("/api/admin/users")[1]["users"]}
+lab = lambda n: f"{users[n]['name']} ({users[n]['student_id']})"
+its = a.call("/api/admin/items")[1]["items"]
+x, y = its[0], its[2]
+# 대여 기록
+assert b.call("/api/scan", {"code": x["code"]})[1]["result"] == "borrowed"
+ln = [l for l in a.call("/api/admin/loans")[1]["loans"] if not l["in_at"]][0]
+assert cells("loans", ln["id"], out_at="2026-01-01T09:00", in_at="2025-12-31T09:00")[0] == 400        # 반납이 대여보다 빠름
+assert cells("loans", ln["id"], who="없는 (000)")[0] == 400 and cells("loans", ln["id"], item="없는 물품")[0] == 400
+assert cells("loans", ln["id"], out_at="2026-01-01T09:00", in_at="2026-01-02T09:00")[0] == 200       # 반납 처리
+assert not [i for i in a.call("/api/admin/items")[1]["items"] if i["id"] == ln["item_id"]][0]["who"]
+assert cells("loans", ln["id"], in_at="", who=lab("alice"), item=y["name"])[0] == 200                # 다시 '빌려 간' 상태, 다른 사람·다른 물품
+now_items = {i["id"]: i for i in a.call("/api/admin/items")[1]["items"]}
+assert now_items[y["id"]]["who"] == "alice" and now_items[y["id"]]["borrowed_at"] == "2026-01-01T09:00" and not now_items[ln["item_id"]]["who"]
+l2 = [l for l in a.call("/api/admin/loans")[1]["loans"] if l["id"] != ln["id"]][0]
+assert cells("loans", l2["id"], in_at="", item=y["name"])[0] == 409                                    # 이미 빌려 간 물품
+assert cells("loans", 99999, in_at="")[0] == 404
+# 물품
+assert cells("items", y["id"], num="1")[0] == 409                                                     # 번호 중복
+assert cells("items", y["id"], code=x["code"])[0] == 409 and cells("items", y["id"], code="!!")[0] == 400
+assert cells("items", y["id"], num="9", code="newc0de")[0] == 200
+ni = [i for i in a.call("/api/admin/items")[1]["items"] if i["id"] == y["id"]][0]
+assert ni["num"] == 9 and ni["code"] == "newc0de" and ni["name"].endswith("9번") and ni["who"] == "alice"
+# 예약 기록
+dd = (council.now().date() + timedelta(days=3)).isoformat()
+rid = a.call("/api/reserve", {"date": dd, "room_id": 1, "hours": [10, 11, 12]})
+rs = a.call("/api/admin/reservations")[1]; blk = [r for r in rs["reservations"] if r["date"] == dd][0]
+assert rs["rooms"] and blk["start"] == 10 and blk["end"] == 13
+assert cells("reservations", blk["id"], start="14시", end="13시")[0] == 400
+assert cells("reservations", blk["id"], date=dd, start="14시", end="17시", room="세미나실 2", who=lab("bob"))[0] == 200
+blk = [r for r in a.call("/api/admin/reservations")[1]["reservations"] if r["date"] == dd][0]
+assert (blk["start"], blk["end"], blk["room"], blk["who"]) == (14, 17, "세미나실 2", "bob")
+b.call("/api/reserve", {"date": dd, "room_id": 1, "hours": [9]})
+assert cells("reservations", blk["id"], room="세미나실 1", start="9시")[0] == 409          # 다른 사람 예약과 겹침
+assert cells("reservations", blk["id"], date="2026-13-45")[0] == 400
+# 회원·행사·공지·신청
+assert cells("users", users["carol"]["id"], username="alice")[0] == 409 and cells("users", users["carol"]["id"], username="a!")[0] == 400
+assert cells("users", users["carol"]["id"], username="carol2", created_at="2026-03-01T10:00")[0] == 200
+assert [u for u in a.call("/api/admin/users")[1]["users"] if u["id"] == users["carol"]["id"]][0]["username"] == "carol2"
+ev0 = a.call("/api/admin/events")[1]["events"][0]
+assert cells("events", ev0["id"], on_lobby=False, dues_only=True)[0] == 200
+e1 = [e for e in a.call("/api/admin/events")[1]["events"] if e["id"] == ev0["id"]][0]
+assert e1["on_lobby"] is False and e1["dues_only"] is True
+nt = a.call("/api/admin/notices")[1]["notices"][0]
+assert cells("notices", nt["id"], kind="x")[0] == 400 and cells("notices", nt["id"], created_at="")[0] == 400
+assert cells("notices", nt["id"], kind="dept", summary="요약 고침", created_at="2026-02-02T08:00")[0] == 200
+n1 = [n for n in a.call("/api/admin/notices")[1]["notices"] if n["id"] == nt["id"]][0]
+assert n1["kind"] == "dept" and n1["summary"] == "요약 고침" and n1["created_at"] == "2026-02-02T08:00"
+ap = a.call("/api/admin/applications")[1]["applications"]
+if ap:
+    assert cells("apps", ap[0]["id"], created_at="2026-02-03T09:00", updated_at="2026-02-04T09:00")[0] == 200
+    assert a.call("/api/admin/applications")[1]["applications"][0]["created_at"] == "2026-02-03T09:00"
+print("전체 수정 OK")
+
+# 신청서는 질문·보기·답변이 각각 표의 행으로 저장된다 (한 칸에 묶지 않음). 질문 순서를 바꿔도 답은 질문을 따라간다.
+dl = (council.now() + timedelta(days=5)).isoformat(timespec="minutes")
+fields = [{"label": "사이즈", "type": "select", "required": True, "options": ["S", "M", "L"]},
+          {"label": "메모", "type": "text", "required": False}, {"label": "동의", "type": "checkbox", "required": False},
+          {"label": "간식", "type": "multi", "required": False, "options": ["빵", "음료", "과일"]}]
+assert a.call("/api/admin/event_save", {"title": "정규화 시험", "deadline": dl, "fields": fields})[0] == 200
+ev = [e for e in a.call("/api/admin/events")[1]["events"] if e["title"] == "정규화 시험"][0]
+assert [f["label"] for f in ev["fields"]] == ["사이즈", "메모", "동의", "간식"] and all(isinstance(f["id"], int) for f in ev["fields"])
+assert b.call("/api/apply", {"event_id": ev["id"], "answers": {"0": "M", "1": "안녕", "2": True, "3": ["음료", "빵"]}})[0] == 200
+with council.connect() as c:
+    rows = [tuple(r) for r in c.execute("""SELECT q.label, a.value FROM answers a JOIN questions q ON q.id=a.question_id WHERE q.event_id=(SELECT id FROM events WHERE pid=?) ORDER BY a.id""", (ev["id"],))]
+    assert rows == [("사이즈", "M"), ("메모", "안녕"), ("동의", "1"), ("간식", "빵"), ("간식", "음료")], rows     # 질문마다 한 줄, 여러 개 고르기는 고른 보기마다 한 줄
+    assert "answers" not in {r[1] for r in c.execute("PRAGMA table_info(applications)")} and "fields" not in {r[1] for r in c.execute("PRAGMA table_info(events)")}
+mine = b.call(f"/api/event?id={ev['id']}")[1]["application"]["answers"]
+assert mine == {"0": "M", "1": "안녕", "2": True, "3": ["빵", "음료"]}, mine
+# 질문 순서를 바꾸고 새 질문을 끼워도 받아 둔 답은 그 질문을 따라간다
+f = ev["fields"]
+assert a.call("/api/admin/event_save", {"id": ev["id"], "title": "정규화 시험", "deadline": dl,
+              "fields": [f[3], {"label": "새 질문", "type": "text"}, f[0], f[2]]})[0] == 200           # 메모(f[1])는 뺌
+mine = b.call(f"/api/event?id={ev['id']}")[1]["application"]["answers"]
+assert mine == {"0": ["빵", "음료"], "1": "", "2": "M", "3": True}, mine
+# 보기에서 뺀 항목을 고른 답은 지워지고, 질문 종류를 바꾸면 옛 답이 지워진다
+f = [e for e in a.call("/api/admin/events")[1]["events"] if e["id"] == ev["id"]][0]["fields"]
+f[0] = dict(f[0], options=["과일", "음료"])
+assert a.call("/api/admin/event_save", {"id": ev["id"], "title": "정규화 시험", "deadline": dl, "fields": f})[0] == 200
+assert b.call(f"/api/event?id={ev['id']}")[1]["application"]["answers"]["0"] == ["음료"]
+# 신청자 표 수정도 행으로 저장된다
+app = a.call(f"/api/admin/applications?id={ev['id']}")[1]["applications"][0]
+assert cells("apps", app["id"], f0=["과일", "음료"], f1="수정함")[0] == 200
+assert a.call(f"/api/admin/applications?id={ev['id']}")[1]["applications"][0]["answers"]["0"] == ["과일", "음료"]
+assert a.call(f"/api/admin/applications?id={ev['id']}")[1]["applications"][0]["answers"]["1"] == "수정함"
+# 행사를 지우면 질문·보기·답이 함께 지워진다
+a.call("/api/admin/event_del", {"id": ev["id"]})
+with council.connect() as c:
+    assert not c.execute("SELECT 1 FROM questions WHERE event_id=?", (ev["id"],)).fetchone()
+    assert not c.execute("SELECT 1 FROM answers WHERE question_id NOT IN (SELECT id FROM questions)").fetchone()
+print("신청서 정규화 OK")
+# 같은 번호의 질문이 두 번 오면(복제) 새 질문으로 만든다
+evs = a.call("/api/admin/event_save", {"title": "복제 시험", "deadline": dl, "fields": [{"label": "하나", "type": "text"}]})
+ev2 = [e for e in a.call("/api/admin/events")[1]["events"] if e["title"] == "복제 시험"][0]
+q0 = ev2["fields"][0]
+a.call("/api/admin/event_save", {"id": ev2["id"], "title": "복제 시험", "deadline": dl, "fields": [q0, dict(q0, label="둘")]})
+got = [e for e in a.call("/api/admin/events")[1]["events"] if e["id"] == ev2["id"]][0]["fields"]
+assert [f["label"] for f in got] == ["하나", "둘"] and got[0]["id"] == q0["id"] and got[1]["id"] != q0["id"]
+print("복제 OK")
+
+# 계정 탈취 막기: 이메일 같은 칸은 최고 관리자만, 관리자 계정은 아무도 못 고친다
+assert a.call("/api/me")[1]["user"]["role"] == "super" and b.call("/api/me")[1]["user"]["role"] == "admin"
+users = {u["username"]: u for u in a.call("/api/admin/users")[1]["users"]}
+def bcells(table, id, **vals):
+    return b.call("/api/admin/cells", {"table": table, "rows": [{"id": id, "vals": vals}]})
+assert bcells("users", users["carol2"]["id"], email="evil@g.skku.edu")[0] == 403           # 일반 관리자는 회원 이메일을 못 바꿈
+assert bcells("users", users["alice"]["id"], email="evil@g.skku.edu")[0] == 403            # 최고 관리자 이메일은 더더욱
+assert cells("users", users["bob"]["id"], email="evil@g.skku.edu")[0] == 403              # 최고 관리자도 관리자 계정은 못 고침
+assert cells("users", users["carol2"]["id"], email="carol@g.skku.edu")[0] == 200
+assert bcells("users", users["carol2"]["id"], dues=True, phone="010-0000-0000")[0] == 200  # 회비·전화번호는 관리자도
+assert [u["email"] for u in a.call("/api/admin/users")[1]["users"] if u["username"] == "alice"] == ["alice@skku.edu"]
+print("계정 탈취 막기 OK")
+
+# 비밀번호: 영문자·숫자 필수, 600000회, 예전 해시는 로그인 때 새 횟수로
+def mail_code(email):
+    n = len(sent)
+    st, d = Client().call("/api/signup_code", {"email": email})
+    return st, (sent[-1][1].split("인증 코드는 ")[1][:6] if len(sent) > n else None)
+def new_user(pw, email="p@skku.edu", code=None, **extra):
+    if code is None:
+        council.connect().execute("DELETE FROM email_codes").connection.commit()
+        code = mail_code(email)[1]
+    return Client().call("/api/signup", {"username": "pwtest" + str(abs(hash(pw)))[:6], "password": pw, "name": "p", "student_id": "2024000090",
+                                         "email": email, "phone": "01012345678", "consent": True, "code": code, **extra})
+def qsignup(email, code, **extra):
+    return new_user("abc123", email, code, username="q" + email[0] + "user", student_id=f"20240002{ord(email[0]) % 100:02d}", **extra)
+assert new_user("abcdefgh")[0] == 400 and new_user("12345678")[0] == 400 and new_user("한글한글한글1")[0] == 400
+assert new_user("abc12")[0] == 400 and new_user("a1" * 70)[0] == 400
+assert new_user("abc123")[0] == 200
+print("가입 인증 코드")
+st, code = mail_code("q@skku.edu")
+assert st == 200 and re.fullmatch(r"\d{6}", code) and sent[-1][0] == "q@skku.edu" and code in sent[-1][2] and "알림 차단" not in sent[-1][2] and "<!--" not in sent[-1][2]
+assert mail_code("q@skku.edu")[0] == 429                                         # 1분 안 재요청 막음
+assert mail_code("q@gmail.com")[0] == 400                                        # 학교 메일만
+assert mail_code("alice@skku.edu")[0] == 409                                     # 이미 가입된 이메일
+assert qsignup("q@skku.edu", "000000" if code != "000000" else "111111")[0] == 400   # 틀린 코드
+assert qsignup("q@skku.edu", "")[0] == 400
+ok = qsignup("q@skku.edu", code, mail_dept=True)
+assert ok[0] == 200 and ok[1]["user"]["mail_dept"] is True and ok[1]["user"]["mail_event"] is False
+assert qsignup("q@skku.edu", code)[0] in (400, 409)                    # 코드는 한 번만
+st, code = mail_code("r@skku.edu")
+for _ in range(5):
+    qsignup("r@skku.edu", "999999" if code != "999999" else "888888")
+assert qsignup("r@skku.edu", code)[0] == 400                          # 5번 틀리면 코드 폐기
+import sqlite3
+con = council.connect()
+assert council.parse_hash(con.execute("SELECT pw FROM users WHERE username='alice'").fetchone()[0])[0] == 600_000
+salt = "ab" * 16
+old = f"{salt}${__import__('hashlib').pbkdf2_hmac('sha256', b'secret1', salt.encode(), 200_000).hex()}"
+con.execute("UPDATE users SET pw=? WHERE username='alice'", (old,)); con.commit()
+assert council.check_pw("secret1", old) and not council.check_pw("secret2", old)
+assert Client().call("/api/login", {"username": "alice", "password": "secret1"})[0] == 200
+assert council.parse_hash(con.execute("SELECT pw FROM users WHERE username='alice'").fetchone()[0])[0] == 600_000
+assert Client().call("/api/login", {"username": "alice", "password": "secret1"})[0] == 200
+con.close()
+print("비밀번호 OK")
+
+# 보안 헤더
+for path in ("/", "/admin", "/api/me", "/api/banners"):
+    r = urlopen(URL + path)
+    h = r.headers
+    assert h["X-Content-Type-Options"] == "nosniff" and h["X-Frame-Options"] == "DENY" and "max-age" in h["Strict-Transport-Security"]
+    assert "frame-ancestors 'none'" in h["Content-Security-Policy"] and h["Referrer-Policy"] == "same-origin"
+page = urlopen(URL + "/")
+if council.INLINE_SCRIPT.findall(open(os.path.join(council.WEB_DIR, "index.html"), "rb").read()):
+    assert "'sha256-" in page.headers["Content-Security-Policy"]
+print("보안 헤더 OK")
+
+# 같은 학번·이메일로는 가입 못 함 (이메일은 대소문자 무시)
+base = {"password": "secret1", "phone": "01012345678", "consent": True}
+assert Client().call("/api/signup", dict(base, username="dupe1", name="d", student_id="2024000001", email="new1@skku.edu")) [0] == 409      # 알리스의 학번
+assert Client().call("/api/signup", dict(base, username="dupe2", name="d", student_id="2024000077", email="ALICE@skku.edu"))[0] == 409      # 알리스의 이메일, 대문자
+assert Client().call("/api/signup", dict(base, username="dupe3", name="d", student_id="2024000077", email="new3@skku.edu", code=mail_code("new3@skku.edu")[1]))[0] == 200
+assert cells("users", users["carol2"]["id"], student_id="2024000001")[0] == 409 and cells("users", users["carol2"]["id"], email="Alice@skku.edu")[0] == 409
+assert cells("users", users["carol2"]["id"], student_id="2024000003", email="carol@g.skku.edu")[0] == 200       # 자기 것 그대로는 괜찮음
+print("중복 가입 막기 OK")
+
+# 가입을 닫으면 아무도 못 가입한다 (기본값)
+council.SIGNUP_OPEN = False
+assert Client().call("/api/signup", dict(base, username="late1", name="l", student_id="2024000055", email="late1@skku.edu"))[0] == 403
+assert Client().call("/api/me")[1]["signup_open"] is False
+assert Client().call("/api/login", {"username": "alice", "password": "secret1"})[0] == 200      # 로그인은 그대로
+council.SIGNUP_OPEN = True
+assert Client().call("/api/me")[1]["signup_open"] is True
+st, d = a.call("/api/admin/signup", {"open": False})
+assert st == 200 and Client().call("/api/me")[1]["signup_open"] is False             # 관리 사이트에서 끄면 환경 기본값보다 우선
+assert a.call("/api/admin/users")[1]["signup_open"] is False
+assert Client().call("/api/signup_code", {"email": "zz@skku.edu"})[0] == 403
+assert Client().call("/api/admin/signup", {"open": True})[0] == 401 and a.call("/api/admin/signup", {"open": "yes"})[0] == 400
+assert a.call("/api/admin/signup", {"open": True})[0] == 200 and Client().call("/api/me")[1]["signup_open"] is True
+print("가입 닫기 OK")
+
+# 공지 메일: 받겠다고 한 분류만, 받은 사람만
+import time
+mails = []
+council.mail_one = lambda to, subject, text, page, unsub: mails.append((to, subject, text, page, unsub))
+def wait_mail(n):
+    for _ in range(50):
+        if len(mails) >= n:
+            return
+        time.sleep(0.05)
+notice = {"kind": "dept", "title": "수강신청 안내", "summary": "다음 주 월요일", "body": "본문", "chips": []}
+assert a.call("/api/mail_prefs", {})[1]["user"]["mail_dept"] is False                  # 기본은 받지 않음
+assert Client().call("/api/mail_prefs", {"mail_dept": True})[0] == 401
+assert a.call("/api/admin/notice_save", notice)[0] == 200
+wait_mail(1)
+assert len(mails) == 1 and mails[0][0] == "q@skku.edu"                               # 학과 공지를 받겠다고 가입한 q 에게만. alice 는 안 받음
+assert a.call("/api/mail_prefs", {"mail_dept": True})[1]["user"] == dict(a.call("/api/me")[1]["user"]) and a.call("/api/me")[1]["user"]["mail_dept"] is True
+assert a.call("/api/admin/notice_save", dict(notice, title="두 번째"))[0] == 200
+wait_mail(3)
+assert sorted(m[0] for m in mails[1:3]) == ["alice@skku.edu", "q@skku.edu"] and "두 번째" in mails[1][1] and "/#/notice/" in mails[1][2] and "알림 차단" in mails[1][3] and mails[1][4].replace("&", "&amp;") in mails[1][3] and "<!--" not in mails[1][3]
+assert a.call("/api/admin/notice_save", dict(notice, kind="event", title="행사"))[0] == 200
+time.sleep(0.3)
+assert len(mails) == 3                                                                 # 행사 공지는 행사 수신을 켠 사람이 없으니 안 나감
+assert a.call("/api/mail_prefs", {"mail_event": True})[1]["user"]["mail_event"] is True
+nid = a.call("/api/admin/notices")[1]["notices"][0]["id"]
+assert a.call("/api/admin/notice_save", dict(notice, id=nid, title="행사 수정"))[0] == 200
+time.sleep(0.3)
+assert len(mails) == 3                                                                 # 고쳐 쓴 공지는 다시 안 보냄
+assert a.call("/api/mail_prefs", {"mail_dept": False})[1]["user"]["mail_dept"] is False
+link = mails[1][4].split(council.PREFIX, 1)[1]
+assert re.search(r"[?&]u=[0-9a-f]{16}&", link) and re.search(r"/#/notice/[0-9a-f]{16}\b", mails[1][2])      # 메일 속 주소에 회원·공지 차례 번호가 없다
+st, page = Client().call(link, raw=True)
+assert st == 200 and "차단할까요" in page.decode() and a.call("/api/me")[1]["user"]["mail_dept"] is False
+a.call("/api/mail_prefs", {"mail_dept": True})
+try:
+    urlopen(URL + link.replace("&t=", "&t=0")); bad = 200
+except HTTPError as e:
+    bad = e.code
+assert bad == 400                  # 서명이 틀리면 거부
+assert a.call("/api/me")[1]["user"]["mail_dept"] is True                               # 열어 보기만으로는 꺼지지 않음 (메일 검사기가 링크를 미리 열어도 안전)
+urlopen(Request(URL + link, data=b"", method="POST"))
+assert a.call("/api/me")[1]["user"]["mail_dept"] is False                              # 버튼을 눌러야 꺼짐
+print("공지 메일 OK")
+
+# 임시 메일 설정 창: 최고 관리자만 저장
+saved = os.environ.get("SMTP_USER")
+assert Client().call("/api/admin/smtp_setup", {"host": "x", "user": "u@x.com", "password": "p"})[0] == 401
+st, page = Client().call("/mail-setup", raw=True)
+assert st == 200 and b"smtp_setup" in page and b"<!--" not in page
+assert a.call("/api/admin/smtp_setup", {"host": "bad host", "user": "u@x.com", "password": "p"})[0] == 400
+assert a.call("/api/admin/smtp_setup", {"host": "smtp.gmail.com", "user": "nope", "password": "p"})[0] == 400
+assert os.environ.get("SMTP_USER") == saved                                            # 틀린 값은 저장되지 않음
+print("메일 설정 창 OK")
+
+frank = Client()
+assert frank.call("/api/login", {"username": "frank", "password": "secret1"})[0] == 200
+# 구글 시트 기록: Apps Script 웹 앱 대신 가짜 서버를 띄워 무엇을 보내는지 확인한다
+from http.server import BaseHTTPRequestHandler
+got = []
+hook = {"answer": None}
+
+
+class Hook(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):                     # 진짜처럼 302 로 다른 주소에 넘기고, 그 주소를 GET 으로 받게 한다
+        got.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+        self.send_response(302)
+        self.send_header("Location", "/echo")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def do_GET(self):
+        body = hook["answer"] if hook["answer"] is not None else json.dumps({"ok": True, "url": "https://docs.google.com/spreadsheets/d/X"}).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+hsrv = ThreadingHTTPServer(("127.0.0.1", 0), Hook)
+threading.Thread(target=hsrv.serve_forever, daemon=True).start()
+sev = {"title": "시트 시험", "deadline": dl, "fields": [{"label": "메모", "type": "text"}, {"label": "동의", "type": "checkbox"}, {"label": "간식", "type": "multi", "options": ["빵", "음료"]}]}
+assert a.call("/api/admin/event_save", sev)[0] == 200
+sx = [e for e in a.call("/api/admin/events")[1]["events"] if e["title"] == "시트 시험"][0]
+assert a.call("/api/admin/events")[1]["sheets_ready"] is False and sx["sheet"] is None
+council.sheet_later(1)                                                    # 연결을 설정하지 않았으면 아무 일도 없다
+assert not council._sheet_pending and not got
+assert a.call("/api/admin/sheet_sync", {"id": sx["id"]})[0] == 400
+assert frank.call("/api/admin/sheet_sync", {"id": sx["id"]})[0] == 403
+assert "sheet" not in json.dumps(Client().call("/api/events")[1])           # 시트 정보는 관리자에게만
+
+os.environ.update(COUNCIL_SHEET_HOOK=f"http://127.0.0.1:{hsrv.server_port}/exec", COUNCIL_SHEET_SECRET="s3cret")
+try:
+    assert b.call("/api/apply", {"event_id": sx["id"], "answers": {"0": "=1+1", "1": True, "2": ["음료", "빵"]}})[0] == 200
+    with council.connect() as c:
+        eid = council.id_of(c, "events", sx["id"])
+    got.clear()
+    assert council.sheet_sync(eid) == ""
+    p = got[-1]
+    assert p["secret"] == "s3cret" and p["key"] == sx["id"] and p["title"] == "시트 시험 신청"
+    assert p["rows"][0] == ["신청 시각", "수정 시각", "이름", "학번", "이메일", "전화번호", "학생회비", "메모", "동의", "간식"]
+    assert p["rows"][1][2:4] == ["bob", "2024000002"] and p["rows"][1][7:] == ["=1+1", "예", "빵, 음료"], p["rows"][1]
+    assert b.call("/api/apply_cancel", {"event_id": sx["id"]})[0] == 200
+    assert council.sheet_sync(eid) == "" and len(got[-1]["rows"]) == 1                    # 취소하면 줄이 빠진다
+    sh = [e for e in a.call("/api/admin/events")[1]["events"] if e["id"] == sx["id"]][0]["sheet"]
+    assert sh["url"].endswith("/X") and sh["error"] == "" and sh["synced_at"]
+    assert a.call("/api/admin/sheet_sync", {"id": sx["id"]})[0] == 200
+    # 스크립트가 거절하거나 엉뚱한 답(로그인 화면 등)을 주면 오류가 남고, 신청은 그대로 저장된다
+    hook["answer"] = json.dumps({"error": "secret"}).encode()
+    assert b.call("/api/apply", {"event_id": sx["id"], "answers": {"0": "x", "1": False, "2": []}})[0] == 200
+    assert "secret" in council.sheet_sync(eid)
+    hook["answer"] = b"<html>login</html>"
+    assert "모든 사용자" in council.sheet_sync(eid)
+    assert [e for e in a.call("/api/admin/events")[1]["events"] if e["id"] == sx["id"]][0]["sheet"]["error"]
+    assert a.call("/api/admin/sheet_sync", {"id": sx["id"]})[0] == 502
+    hook["answer"] = None
+    assert council.sheet_sync(eid) == "" and len(got[-1]["rows"]) == 2                    # 다음에 성공하면 맞춰지고 오류는 지워진다
+    assert [e for e in a.call("/api/admin/events")[1]["events"] if e["id"] == sx["id"]][0]["sheet"]["error"] == ""
+finally:
+    os.environ.pop("COUNCIL_SHEET_HOOK")
+    hsrv.shutdown()
+print("구글 시트 OK")
+
+# 검색 엔진용 robots.txt · sitemap.xml
+st, body = Client().call("/robots.txt", raw=True)
+assert st == 200 and b"Disallow: " + council.PREFIX.encode() + b"/admin" in body and b"sitemap.xml" in body
+st, body = Client().call("/sitemap.xml", raw=True)
+assert st == 200 and body.startswith(b"<?xml") and b"<loc>" + (council.ORIGIN + council.PREFIX).encode() + b"/</loc>" in body and b"<!--" not in body
+print("사이트맵 OK")
+
+# 마이페이지 · 탈퇴
+council.connect().execute("DELETE FROM email_codes").connection.commit()
+st, d = new_user("secret1", "zed@skku.edu", mail_code("zed@skku.edu")[1], username="zed", student_id="2024000555")
+assert st == 200, d
+zed = Client()
+assert zed.call("/api/login", {"username": "zed", "password": "secret1"})[0] == 200
+st, d = zed.call("/api/mypage")
+assert st == 200 and d["loans"] == [] and d["applications"] == [] and Client().call("/api/mypage")[0] == 401
+assert zed.call("/api/withdraw", {"password": "wrong1"})[0] == 401
+assert a.call("/api/withdraw", {"password": "secret1"})[0] == 403                          # 관리자는 탈퇴 불가
+assert zed.call("/api/withdraw", {"password": "secret1"})[0] == 200
+assert zed.call("/api/me")[1]["user"] is None and Client().call("/api/login", {"username": "zed", "password": "secret1"})[0] == 401
+print("마이페이지 OK")

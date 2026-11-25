@@ -124,7 +124,7 @@ export function md(src) {
 }
 
 // ── 알림 ────────────────────────────────────────────────────────────────
-// 화면 아래에 잠깐 뜨는 알림. 실제로 띄우는 일은 Providers 가 Astryx 알림으로 연결해 둔다.
+// 화면 아래에 잠깐 뜨는 한 줄 알림. 실제로 띄우는 일은 Providers(ui/base.jsx)의 .toast 가 맡는다.
 let showToast = msg => console.log(msg);
 export const setToast = fn => { showToast = fn; };
 export const toast = msg => { showToast(msg); };

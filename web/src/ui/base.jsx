@@ -1,19 +1,7 @@
-// 두 사이트가 같이 쓰는 틀: Astryx 테마·한국어·알림·확인 창, 화면 밝기 단추, 주소(#/…) 따라가기.
+// 두 사이트가 같이 쓰는 틀: 화면 밝기, 알림, 확인·입력 창, 주소(#/…) 따라가기, 불러오기.
+// 모양은 디자인 시스템 SWITCH (tokens.css + switch.css) 를 따른다.
 import {createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore} from 'react';
-import {Theme} from '@astryxdesign/core/theme';
-import {InternationalizationProvider} from '@astryxdesign/core/i18n';
-import KO from '@astryxdesign/core/locales/ko-KR.generated.js';
-import {LayerProvider} from '@astryxdesign/core/Layer';
-import {useToast} from '@astryxdesign/core/Toast';
-import {AlertDialog} from '@astryxdesign/core/AlertDialog';
-import {Dialog, DialogHeader} from '@astryxdesign/core/Dialog';
-import {TextInput} from '@astryxdesign/core/TextInput';
-import {Button} from '@astryxdesign/core/Button';
-import {IconButton} from '@astryxdesign/core/IconButton';
 import {Sun, Moon} from 'lucide-react';
-import {HStack} from '@astryxdesign/core/HStack';
-import {VStack} from '@astryxdesign/core/VStack';
-import {neutralTheme} from '@astryxdesign/theme-neutral/built';
 import {setToast} from '../lib/common.js';
 
 // ── 주소 따라가기 ─────────────────────────────────────────────────────
@@ -26,17 +14,25 @@ export function useHash(fallback = '/') {
 }
 export const go = h => { location.hash = h; };
 
+// 화면 폭 (폰처럼 좁은지)
+export function useMQ(q) {
+  const mq = useRef(matchMedia(q)).current;
+  return useSyncExternalStore(f => { mq.addEventListener('change', f); return () => mq.removeEventListener('change', f); }, () => mq.matches);
+}
+
 // ── 화면 밝기 ─────────────────────────────────────────────────────────
-// 기본은 기기 설정을 따른다. 단추 하나로 밝게↔어둡게를 바꾸고, 고른 것은 이 브라우저에 기억한다.
-// 기기 설정과 같은 쪽으로 돌아오면 기억을 지워 다시 '기기를 따름'이 된다. (예전 사이트와 같은 저장 이름)
-const darkMQ = matchMedia('(prefers-color-scheme: dark)');
+// 기본은 기기 설정. 단추 하나로 밝게↔어둡게를 바꾸고, 고른 것은 이 브라우저에 기억한다.
+// 기기 설정과 같은 쪽으로 돌아오면 기억을 지워 다시 '기기를 따름'이 된다. <html data-theme> 로 건다.
 const stored = () => { try { return localStorage.getItem('theme'); } catch { return null; } };
 const ModeCtx = createContext(null);
 function useMode() {
+  const deviceDark = useMQ('(prefers-color-scheme: dark)');
   const [mode, setMode] = useState(() => stored() || 'system');
-  const [deviceDark, setDeviceDark] = useState(darkMQ.matches);
-  useEffect(() => { const f = () => setDeviceDark(darkMQ.matches); darkMQ.addEventListener?.('change', f); return () => darkMQ.removeEventListener?.('change', f); }, []);
   const dark = mode === 'system' ? deviceDark : mode === 'dark';
+  useEffect(() => {
+    const h = document.documentElement;
+    if (mode === 'system') delete h.dataset.theme; else h.dataset.theme = mode;
+  }, [mode]);
   const toggle = () => {
     const want = dark ? 'light' : 'dark';
     const fixed = want === (deviceDark ? 'dark' : 'light') ? null : want;
@@ -47,14 +43,31 @@ function useMode() {
 }
 export function ThemeButton() {
   const {dark, toggle} = useContext(ModeCtx);
-  return <IconButton label={dark ? '밝은 화면으로' : '어두운 화면으로'} tooltip={dark ? '밝은 화면으로' : '어두운 화면으로'} variant="ghost"
-    icon={dark ? <Sun size={18} /> : <Moon size={18} />} onClick={toggle} />;
+  const label = dark ? '밝은 화면으로' : '어두운 화면으로';
+  return <button type="button" className="rb" aria-label={label} title={label} onClick={toggle}>{dark ? <Sun /> : <Moon />}</button>;
 }
 
 // ── 확인 창 · 입력 창 ─────────────────────────────────────────────────
-// 브라우저 기본 confirm/prompt 대신 Astryx 창을 띄운다. await ask(...) 로 답을 받는다.
+// 브라우저 기본 confirm/prompt 대신 띄운다. await ask.confirm(...) / ask.prompt(...) 로 답을 받는다.
 const AskCtx = createContext(null);
 export const useAsk = () => useContext(AskCtx);
+function Dlg({role, title, desc, onCancel, children}) {
+  const box = useRef(null);
+  useEffect(() => {
+    const prev = document.activeElement;
+    (box.current.querySelector('input') || box.current.querySelector('.acts .btn:last-child'))?.focus();
+    const esc = e => { if (e.key === 'Escape') { e.preventDefault(); onCancel(); } };
+    addEventListener('keydown', esc);
+    return () => { removeEventListener('keydown', esc); prev?.focus?.(); };
+  }, []);
+  return <div className="dlg-back" onMouseDown={e => { if (e.target === e.currentTarget) onCancel(); }}>
+    <div className="dlg" role={role} aria-modal="true" aria-labelledby="dlg-t" aria-describedby={desc ? 'dlg-d' : undefined} ref={box}>
+      <h2 id="dlg-t">{title}</h2>
+      {desc && <p id="dlg-d">{desc}</p>}
+      {children}
+    </div>
+  </div>;
+}
 function AskHost({children}) {
   const [alert, setAlert] = useState(null);      // {title, description, actionLabel, danger, resolve}
   const [prompt, setPrompt] = useState(null);    // {title, description, label, type, value, actionLabel, resolve}
@@ -69,42 +82,42 @@ function AskHost({children}) {
   const closePrompt = v => { prompt?.resolve(v); setPrompt(null); };
   return <AskCtx.Provider value={ask.current}>
     {children}
-    {alert && <AlertDialog isOpen onOpenChange={o => !o && closeAlert(false)} title={alert.title} description={alert.description || ' '}
-      cancelLabel="취소" actionLabel={alert.actionLabel} actionVariant={alert.danger ? 'destructive' : 'primary'} onAction={() => closeAlert(true)} />}
-    {prompt && <Dialog isOpen onOpenChange={o => !o && closePrompt(null)} width={420}>
+    {alert && <Dlg role="alertdialog" title={alert.title} desc={alert.description} onCancel={() => closeAlert(false)}>
+      <div className="acts">
+        <button type="button" className="btn ghost" onClick={() => closeAlert(false)}>취소</button>
+        <button type="button" className={'btn' + (alert.danger ? ' danger' : '')} onClick={() => closeAlert(true)}>{alert.actionLabel}</button>
+      </div>
+    </Dlg>}
+    {prompt && <Dlg role="dialog" title={prompt.title} desc={prompt.description} onCancel={() => closePrompt(null)}>
       <form onSubmit={e => { e.preventDefault(); closePrompt(prompt.value); }}>
-        <VStack gap={4} padding={5}>
-          <DialogHeader title={prompt.title} subtitle={prompt.description || undefined} onOpenChange={o => !o && closePrompt(null)} />
-          <TextInput label={prompt.label} type={prompt.type} value={prompt.value} hasAutoFocus
-            onChange={v => setPrompt(p => ({...p, value: v}))} autoComplete={prompt.type === 'password' ? 'current-password' : 'off'} />
-          <HStack gap={2} hAlign="end">
-            <Button label="취소" variant="secondary" onClick={() => closePrompt(null)} />
-            <Button label={prompt.actionLabel} variant="primary" type="submit" />
-          </HStack>
-        </VStack>
+        <label className="f" style={{marginBottom: 0}}>{prompt.label}
+          <input type={prompt.type} value={prompt.value} onChange={e => { const v = e.target.value; setPrompt(p => ({...p, value: v})); }}
+            autoComplete={prompt.type === 'password' ? 'current-password' : 'off'} /></label>
+        <div className="acts" style={{marginTop: 16}}>
+          <button type="button" className="btn ghost" onClick={() => closePrompt(null)}>취소</button>
+          <button type="submit" className="btn">{prompt.actionLabel}</button>
+        </div>
       </form>
-    </Dialog>}
+    </Dlg>}
   </AskCtx.Provider>;
 }
 
-// 예전 toast() 를 Astryx 알림으로
-function ToastBridge() {
-  const show = useToast();
-  useEffect(() => { setToast(msg => show({body: msg, autoHideDuration: 2600})); }, [show]);
-  return null;
+// 화면 아래에 잠깐 뜨는 한 줄 알림 (2.6초)
+function ToastHost() {
+  const [msg, setMsg] = useState(null);
+  useEffect(() => {
+    let t = 0;
+    setToast(m => { clearTimeout(t); setMsg({m, k: Date.now()}); t = setTimeout(() => setMsg(null), 2600); });
+    return () => clearTimeout(t);
+  }, []);
+  return msg && <div className="toast" role="status" aria-live="polite" key={msg.k}>{msg.m}</div>;
 }
 
 export function Providers({children}) {
   const m = useMode();
   return <ModeCtx.Provider value={m}>
-    <InternationalizationProvider locale="ko-KR" messages={{'ko-KR': KO}}>
-      <Theme theme={neutralTheme} mode={m.mode}>
-        <LayerProvider>
-          <ToastBridge />
-          <AskHost>{children}</AskHost>
-        </LayerProvider>
-      </Theme>
-    </InternationalizationProvider>
+    <AskHost>{children}</AskHost>
+    <ToastHost />
   </ModeCtx.Provider>;
 }
 

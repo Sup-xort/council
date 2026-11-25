@@ -1,16 +1,15 @@
 // 세미나실 예약: 칸을 누르거나 누른 채로 끌어서 여러 시간을 고른다
 import {useEffect, useMemo, useRef, useState} from 'react';
-import {Card, Heading, Text, HStack, VStack, Button, List, ListItem, EmptyState} from '../ui/ax.js';
 import {api, iso, addDays, toDate, wd, koDate, koDay, koRange, toast} from '../lib/common.js';
-import {useAsk, useLoad} from '../ui/base.jsx';
-import {useNarrow} from '../ui/narrow.js';
-import {Loading} from './parts.jsx';
+import {useAsk, useLoad, useMQ} from '../ui/base.jsx';
+import {Btn, Pb, Empty, Loading, Head} from '../ui/kit.jsx';
+import {IcCal} from '../ui/icons.jsx';
 import {days7, HOURS, DAY_FROM, rangeLabel, whoMsg, Legend, DayHead, WeekNav, RoomPick} from './Lobby.jsx';
 
 const mondayOf = d => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() - (t.getUTCDay() + 6) % 7); return t.toISOString().slice(0, 10); };
 
 export default function Reserve({q}) {
-  const ask = useAsk(), narrow = useNarrow();
+  const ask = useAsk(), narrow = useMQ('(max-width: 640px)');
   const today = iso(new Date());
   const [room, setRoom] = useState(+q.get('room') || null);
   const [day, setDay] = useState(q.get('date') || today);
@@ -83,11 +82,11 @@ export default function Reserve({q}) {
   const shift = n => { setWstart(addDays(w.start, n)); reset(); };
 
   return <div className="cols enter">
-    <Card padding={4}><VStack gap={4}>
-      <Heading level={1}>세미나실 예약</Heading>
+    <section className="card stack">
+      <Head big kicker={koDate(today)} title="세미나실" />
       <RoomPick rooms={w.rooms} room={rm} onChange={v => { setRoom(v); reset(); }} />
-      <HStack hAlign="between" vAlign="center" gap={2}><Text type="large" weight="semibold" className="nowrap">{narrow ? koDate(dsel) : rangeLabel(days)}</Text>
-        <WeekNav onPrev={() => shift(-7)} onToday={() => { setWstart(today); setDay(today); reset(); }} onNext={() => shift(7)} /></HStack>
+      <div className="row"><b className="grow nowrap">{narrow ? koDate(dsel) : rangeLabel(days)}</b>
+        <WeekNav onPrev={() => shift(-7)} onToday={() => { setWstart(today); setDay(today); reset(); }} onNext={() => shift(7)} /></div>
       {narrow ? <>
         <div className="daystrip" role="group" aria-label="날짜 고르기">{days.map(d => {
           const past = d < nowD;
@@ -112,20 +111,20 @@ export default function Reserve({q}) {
           })}</div>)}
         </div>
       </div>}
-      <div><Button label={early ? `0~${DAY_FROM}시 접기` : `0~${DAY_FROM}시 보기`} variant="ghost" size="sm" onClick={() => setEarly(!early)} /></div>
+      <div><Pb soft onClick={() => setEarly(!early)}>{early ? `0~${DAY_FROM}시 접기` : `0~${DAY_FROM}시 보기`}</Pb></div>
       <Legend extra="누른 채로 끌면 여러 시간을 한 번에 고릅니다" />
       {hs.length > 0 && <div className="act">
-        <Text weight="semibold" className="act-n"><span className={over ? 'over' : ''}>{total}</span>{cap > 0 ? `/${cap}` : ''}시간</Text>
-        <Button label="예약" variant="primary" size="lg" onClick={go} isLoading={busy} isDisabled={over} />
+        <b className="act-n"><span className={over ? 'over' : ''}>{total}</span>{cap > 0 ? `/${cap}` : ''}시간</b>
+        <Btn onClick={go} busy={busy} disabled={over}>예약</Btn>
       </div>}
-    </VStack></Card>
-    <Card padding={4}><VStack gap={2}>
-      <Heading level={3}>내 예약</Heading>
-      {mine.length ? <List hasDividers>{mine.map(g => <ListItem key={g.ids[0]} label={g.room}
-        description={`${koDay(g.date)}${koDay(g.date) === koDate(g.date) ? '' : ` ${koDate(g.date)}`} ${koRange(g.start, g.end)}`}
-        endContent={<Button label="취소" variant="destructive" size="sm" onClick={() => cancel(g.ids)} isDisabled={locked(g)} />} />)}</List>
-        : <EmptyState isCompact title="예약한 시간이 없습니다" description="시간표에서 빈 칸을 눌러 예약하십시오." />}
-      {(cap > 0 || lead > 0) && <Text type="supporting" color="secondary">{[cap > 0 && `한 주(월~일)에 ${cap}시간까지 예약할 수 있습니다.`, lead > 0 && `시작 ${lead}시간 전까지만 취소할 수 있습니다.`].filter(Boolean).join(' ')}</Text>}
-    </VStack></Card>
+    </section>
+    <section className="card">
+      <h3>내 예약</h3>
+      {mine.length ? <div className="list">{mine.map(g => <div key={g.ids[0]}><div className="grow"><b className="li-t">{g.room}</b>
+        <span className="muted">{`${koDay(g.date)}${koDay(g.date) === koDate(g.date) ? '' : ` ${koDate(g.date)}`} ${koRange(g.start, g.end)}`}</span></div>
+        <Btn kind="red" size="sm" onClick={() => cancel(g.ids)} disabled={locked(g)}>취소</Btn></div>)}</div>
+        : <Empty icon={<IcCal />} title="예약한 시간이 없습니다" desc="시간표에서 빈 칸을 눌러 예약하십시오." />}
+      {(cap > 0 || lead > 0) && <p className="muted">{[cap > 0 && `한 주(월~일)에 ${cap}시간까지 예약할 수 있습니다.`, lead > 0 && `시작 ${lead}시간 전까지만 취소할 수 있습니다.`].filter(Boolean).join(' ')}</p>}
+    </section>
   </div>;
 }

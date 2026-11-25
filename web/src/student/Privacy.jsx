@@ -1,19 +1,18 @@
 // 개인정보 처리방침 — 개인정보보호위원회 「개인정보 처리방침 작성지침(2025.4.)」의 기재사항 순서와 작성 예시 문구를 따른다
-import {Heading, Text} from '../ui/ax.js';
 
 const ORG = 'SWITCH';
 const MAIL = 'opoog999@skku.edu';
 
-const Sec = ({t, children}) => <section><Heading level={3}>{t}</Heading>{children}</section>;
-const P = ({children}) => <Text as="p" type="body">{children}</Text>;
+const Sec = ({t, children}) => <section><h3>{t}</h3>{children}</section>;
+const P = ({children}) => <p>{children}</p>;
 const Table = ({head, rows}) => <div className="tw"><table>
   <thead><tr>{head.map(h => <th key={h}>{h}</th>)}</tr></thead>
   <tbody>{rows.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j}>{c}</td>)}</tr>)}</tbody>
 </table></div>;
 
 export default function Privacy() {
-  return <article className="narrow doc enter">
-    <Heading level={1}>개인정보 처리방침</Heading>
+  return <article className="col doc enter card">
+    <h1>개인정보 처리방침</h1>
     <P>SWITCH(성균관대학교 정보통신대학 반도체융합공학과 학생회, 이하 SWITCH)는 「개인정보 보호법」에 따라 정보주체의 개인정보를 보호하고 이와 관련한 고충을 신속하고 원활하게 처리할 수 있도록 다음과 같이 개인정보 처리방침을 수립·공개합니다.</P>
 
     <Sec t="1. 개인정보의 처리목적">

@@ -1,15 +1,13 @@
 // 이용약관 — 개인정보 처리방침(Privacy.jsx)과 같은 모양
-import {Heading, Text} from '../ui/ax.js';
-
 const ORG = 'SWITCH';
 const MAIL = 'opoog999@skku.edu';
 
-const Sec = ({t, children}) => <section><Heading level={3}>{t}</Heading>{children}</section>;
-const P = ({children}) => <Text as="p" type="body">{children}</Text>;
+const Sec = ({t, children}) => <section><h3>{t}</h3>{children}</section>;
+const P = ({children}) => <p>{children}</p>;
 
 export default function Terms() {
-  return <article className="narrow doc enter">
-    <Heading level={1}>이용약관</Heading>
+  return <article className="col doc enter card">
+    <h1>이용약관</h1>
 
     <Sec t="제1조 (목적)">
       <P>이 약관은 성균관대학교 정보통신대학 반도체융합공학과 학생회 {ORG}(이하 “학생회”)가 운영하는 홈페이지(이하 “사이트”)를 이용하는 데 필요한 조건과 절차, 학생회와 이용자의 권리·의무를 정합니다.</P>

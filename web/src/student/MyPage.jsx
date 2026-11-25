@@ -1,8 +1,7 @@
-// 마이페이지: 알림 · 계정 정보 · 로그아웃 · 탈퇴
-import {Card, Text, VStack, List, ListItem} from '../ui/ax.js';
 import {api, toast} from '../lib/common.js';
 import {useAsk} from '../ui/base.jsx';
-import {useMe, PageHead} from './parts.jsx';
+import {Head, Rows} from '../ui/kit.jsx';
+import {useMe} from './parts.jsx';
 import {MailSettings} from './Pages.jsx';
 
 function Account() {
@@ -16,25 +15,21 @@ function Account() {
     if (!pw) return;
     try { await api('withdraw', {password: pw}); setMe(null); toast('탈퇴가 끝났어요. 그동안 이용해 주셔서 고마워요'); location.hash = '#/'; } catch {}
   };
-  return <VStack gap={4} hAlign="stretch">
+  return <>
     <MailSettings />
-    <Card padding={2}><List hasDividers>
-      <ListItem label="이름" endContent={<Text type="supporting" color="secondary">{me.name}</Text>} />
-      <ListItem label="학번" endContent={<Text type="supporting" color="secondary">{me.student_id}</Text>} />
-      <ListItem label="이메일" endContent={<Text type="supporting" color="secondary">{me.email}</Text>} />
-      <ListItem label="학생회비 납부" endContent={<span className={me.dues ? 'dues dues-o' : 'dues dues-x'}>{me.dues ? 'O' : 'X'}</span>} />
-    </List></Card>
-    <Card padding={2}><List hasDividers>
-      <ListItem label="로그아웃" onClick={out} />
-      <ListItem label="회원 탈퇴" description="계정과 기록이 모두 삭제돼요" onClick={leave} />
-    </List></Card>
-  </VStack>;
+    <Rows rows={[['이름', me.name], ['학번', me.student_id], ['이메일', me.email],
+      ['학생회비', <span className={me.dues ? 'dues dues-o' : 'dues dues-x'}>{me.dues ? '납부 O' : '미납부 X'}</span>]]} />
+    <div className="card list acts">
+      <div><button type="button" className="grow" onClick={out}>로그아웃</button></div>
+      <div><button type="button" className="grow danger" onClick={leave}>회원 탈퇴<span className="muted"> · 계정과 기록이 모두 삭제돼요</span></button></div>
+    </div>
+  </>;
 }
 
 export default function MyPage() {
   const {me} = useMe();
-  return <div className="narrow"><VStack gap={4}>
-    <PageHead title={`${me.name}(${me.student_id})`} desc="내 정보와 설정" />
+  return <div className="col enter">
+    <Head big title={`${me.name}(${me.student_id})`} desc="내 정보와 설정" />
     <Account />
-  </VStack></div>;
+  </div>;
 }

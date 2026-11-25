@@ -1,0 +1,60 @@
+/* switch.css(디자인 시스템 SWITCH 의 부품) 위에 두 사이트가 같이 쓰는 작은 조각. 값은 tokens.css 의 토큰만 쓴다. */
+body { font-family: var(--font-sans); }
+.grow { flex: 1; min-width: 0; }
+.nowrap { white-space: nowrap; }
+.center { text-align: center; }
+.stack { display: flex; flex-direction: column; gap: var(--space-14); }
+.stack > * { margin-bottom: 0; }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+a.btn:focus-visible, button:focus-visible { outline-offset: 3px; }
+.btn[aria-busy] { cursor: progress; }
+
+/* 입력칸 아래 보조 글 · 틀린 곳 */
+label.f .hint { display: block; margin-top: 6px; font-size: 13px; color: var(--sub); }
+label.f .hint.err { color: var(--req); }
+label.f [aria-invalid=true] { box-shadow: 0 0 0 2px var(--req); }
+label.f select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--sub) 50%), linear-gradient(135deg, var(--sub) 50%, transparent 50%);
+  background-position: calc(100% - 20px) 50%, calc(100% - 15px) 50%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 36px; }
+label.chk > span { display: flex; flex-direction: column; }
+label.chk .chk-d { font-size: 13px; color: var(--sub); }
+
+/* 화면 머리말: 제목 오른쪽에 버튼 */
+.head-t { display: flex; align-items: center; justify-content: space-between; gap: var(--space-10); flex-wrap: wrap; }
+.head-d { margin: 0; }
+.head-end { display: flex; gap: var(--space-8); }
+.sec-h { display: flex; align-items: center; justify-content: space-between; gap: var(--space-10); }
+.sec-h h2 { margin: 8px 4px 10px; }
+.meta-l { display: flex; align-items: center; gap: var(--space-8); }
+
+/* 목록 한 줄의 제목·부제 */
+.list .li-t { display: block; font-weight: 500; }
+.list .li-s { display: block; font-size: 13px; }
+
+/* 안내 (마감·정원·납부자만): fill 바탕. 완료는 .done (연두) */
+.info { display: flex; gap: var(--space-10); padding: 14px 16px; border-radius: var(--radius-container); background: var(--fill); font-size: 15px; }
+.info b { font-weight: 600; }
+.info-d { margin-top: 2px; color: var(--sub); font-size: 14px; }
+.done svg.i { width: 20px; height: 20px; stroke-width: 2.4; }
+
+/* 불러오는 중: 카드 자리들을 세로로 */
+.sk-col { display: flex; flex-direction: column; gap: var(--space-14); }
+.legend-x { flex-basis: 100%; justify-content: center; }
+.legend { flex-wrap: wrap; }
+
+/* 화면이 바뀔 때 살짝 떠오르며 나타나기. 움직임 줄이기를 켠 기기에서는 하지 않는다 */
+@media (prefers-reduced-motion: no-preference) {
+  .enter { animation: enter .28s cubic-bezier(.2, .7, .3, 1) both; }
+  .pop { animation: pop .5s cubic-bezier(.3, 1.6, .5, 1) both; }
+  .dlg { animation: enter .2s cubic-bezier(.2, .7, .3, 1) both; }
+  @keyframes enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+}
+@media (prefers-reduced-motion: no-preference) { .toast { animation: toastIn .2s ease both; } @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translateX(-50%); } } }
+.me-chip{display:inline-flex;align-items:center;gap:6px;max-width:min(46vw,260px);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.dues{font-weight:700}
+.dues-o{color:var(--ok-ink)}
+.dues-x{color:var(--busy-ink)}
+.foot-links{display:inline-flex;gap:16px}
+.result .due{display:inline-flex;align-items:center;gap:6px;margin:12px 0 0;padding:4px 12px;border-radius:var(--radius-pill);background:var(--tint);color:var(--sub);font-size:14px;font-weight:600}
+.acts button{background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer;min-height:44px}
+.acts .danger{color:var(--red,#d14343)}

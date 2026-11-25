@@ -162,7 +162,7 @@ def user_out(u):
 def signup(c, me, b, q):
     username = s(b, "username", 32)
     if not re.fullmatch(r"[A-Za-z0-9_.-]{3,32}", username):
-        raise Err(400, "아이디는 영문·숫자 3~32자")
+        raise Err(400, "아이디는 영문·숫자로만 구성되어야 합니다.")
     pw = b.get("password") or ""
     if not isinstance(pw, str) or len(pw) < 6:
         raise Err(400, "비밀번호는 6자 이상")
